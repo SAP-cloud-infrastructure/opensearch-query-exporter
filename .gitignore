@@ -1,0 +1,18 @@
+# Binaries (only in root directory)
+/opensearch-query-exporter
+/opensearch-query-exporter-*
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage.out
+coverage.html

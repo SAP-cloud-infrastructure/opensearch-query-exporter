@@ -1,0 +1,99 @@
+# Security Team Query Configuration
+# Deploy as ConfigMap: kubectl create configmap opensearch-queries-security --from-file=security.yaml
+
+queries:
+  # Failed authentication attempts
+  - name: failed_logins
+    team: security
+    description: Track failed authentication attempts
+    interval: 60s
+    indices: "security-logs-*"
+    on_error: preserve    # Critical security metric - never lose data
+    on_missing: zero
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - match:
+                event.category: "authentication"
+            - match:
+                event.outcome: "failure"
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+      aggs:
+        by_user:
+          terms:
+            field: "user.name.keyword"
+            size: 100
+            order:
+              _count: desc
+        by_source_ip:
+          terms:
+            field: "source.ip"
+            size: 50
+            order:
+              _count: desc
+
+  # Privilege escalation events
+  - name: privilege_escalation
+    team: security
+    description: Monitor privilege escalation attempts
+    interval: 30s
+    indices: "security-logs-*"
+    on_error: preserve
+    on_missing: drop
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - terms:
+                event.action:
+                  - "sudo"
+                  - "su"
+                  - "role-change"
+                  - "permission-grant"
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+      aggs:
+        by_action:
+          terms:
+            field: "event.action"
+        by_user:
+          terms:
+            field: "user.name.keyword"
+            size: 50
+
+  # API access from unusual locations
+  - name: geo_anomalies
+    team: security
+    description: API access from unusual geographic locations
+    interval: 300s
+    indices: "api-access-*"
+    on_error: drop
+    on_missing: drop
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - range:
+                "@timestamp":
+                  gte: "now-1h"
+          must_not:
+            - terms:
+                geoip.country_code:
+                  - "DE"
+                  - "EU"
+      aggs:
+        by_country:
+          terms:
+            field: "geoip.country_code"
+            size: 20
+          aggs:
+            unique_users:
+              cardinality:
+                field: "user.id.keyword"

@@ -1,0 +1,79 @@
+# SRE Team Query Configuration
+# Deploy as ConfigMap: kubectl create configmap opensearch-queries-sre --from-file=sre.yaml
+
+queries:
+  # Error log monitoring - critical for alerting
+  - name: error_logs
+    team: sre
+    description: Count error logs in the last 5 minutes
+    interval: 30s
+    indices: "logs-*"
+    on_error: preserve    # Keep last known value during outages
+    on_missing: zero      # Zero out metrics for services that stop logging
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - match:
+                level: "ERROR"
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+
+  # Errors grouped by service
+  - name: errors_by_service
+    team: sre
+    description: Count errors grouped by service
+    interval: 60s
+    indices: "logs-*"
+    on_error: preserve
+    on_missing: drop
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - match:
+                level: "ERROR"
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+      aggs:
+        by_service:
+          terms:
+            field: "service.keyword"
+            size: 50
+          aggs:
+            error_count:
+              value_count:
+                field: "_id"
+
+  # Pod restart tracking
+  - name: pod_restarts
+    team: sre
+    description: Track Kubernetes pod restarts
+    interval: 120s
+    indices: "kubernetes-events-*"
+    on_error: preserve
+    on_missing: zero
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - match:
+                reason: "Restarted"
+            - range:
+                "@timestamp":
+                  gte: "now-15m"
+      aggs:
+        by_namespace:
+          terms:
+            field: "namespace.keyword"
+            size: 100
+          aggs:
+            by_pod:
+              terms:
+                field: "pod.keyword"
+                size: 50

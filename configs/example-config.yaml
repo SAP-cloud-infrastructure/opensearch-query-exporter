@@ -1,0 +1,109 @@
+# OpenSearch Exporter Example Configuration
+# This file demonstrates how to configure the exporter with queries embedded
+# For production use with multiple teams, see the split configuration approach:
+#   - configs/global.yaml (connection settings)
+#   - configs/queries/*.yaml (team-specific queries)
+
+# OpenSearch connection settings
+opensearch_url: https://opensearch.example.com:9200
+
+# Authentication credentials (required)
+credentials:
+  - username: "primary_user"
+    password: "primary_password"
+  - username: "backup_user"
+    password: "backup_password"
+
+# TLS configuration
+ca_cert_path: /etc/ssl/certs/opensearch-ca.pem
+insecure: false
+timeout: 30s
+
+# Query definitions with error handling strategies
+queries:
+  # Simple document count
+  - name: all_documents
+    team: platform
+    description: Count all documents in the cluster
+    interval: 60s
+    indices: "_all"
+    on_error: preserve   # Keep last value on error
+    on_missing: drop     # Remove metrics for missing data
+    query:
+      size: 0
+      query:
+        match_all: {}
+
+  # Error monitoring with preserve strategy
+  - name: error_logs
+    team: sre
+    description: Count error logs in the last 5 minutes
+    interval: 30s
+    indices: "logs-*"
+    on_error: preserve   # Critical metric - keep last known value
+    on_missing: zero     # Zero out if service stops reporting
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - match:
+                level: "ERROR"
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+
+  # Aggregation query with buckets
+  - name: errors_by_service
+    team: sre
+    description: Count errors grouped by service
+    interval: 60s
+    indices: "logs-*"
+    on_error: drop       # Remove stale data on error
+    on_missing: drop
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - match:
+                level: "ERROR"
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+      aggs:
+        by_service:
+          terms:
+            field: "service.keyword"
+            size: 20
+          aggs:
+            error_count:
+              value_count:
+                field: "_id"
+
+  # Performance metrics with custom metric extraction
+  - name: response_time_stats
+    team: performance
+    description: API response time statistics
+    interval: 120s
+    indices: "api-metrics-*"
+    on_error: zero
+    on_missing: zero
+    query:
+      size: 0
+      query:
+        range:
+          "@timestamp":
+            gte: "now-10m"
+      aggs:
+        response_time_percentiles:
+          percentiles:
+            field: "response_time_ms"
+            percents: [50, 95, 99]
+        avg_response_time:
+          avg:
+            field: "response_time_ms"
+    metrics:
+      - name: p99_response_time
+        path: aggregations.response_time_percentiles.values.99.0
+        help: 99th percentile response time in milliseconds

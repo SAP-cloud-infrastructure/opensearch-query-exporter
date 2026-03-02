@@ -1,0 +1,49 @@
+# Platform Team Query Configuration
+# Deploy as ConfigMap: kubectl create configmap opensearch-queries-platform --from-file=platform.yaml
+
+queries:
+  # Overall cluster document count
+  - name: total_documents
+    team: platform
+    description: Total documents across all indices
+    interval: 300s
+    indices: "_all"
+    on_error: preserve
+    on_missing: drop
+    query:
+      size: 0
+      query:
+        match_all: {}
+
+  # Index size monitoring
+  - name: index_sizes
+    team: platform
+    description: Document count per index pattern
+    interval: 300s
+    indices: "logs-*,metrics-*,events-*"
+    on_error: drop
+    on_missing: drop
+    query:
+      size: 0
+      query:
+        match_all: {}
+      aggs:
+        by_index:
+          terms:
+            field: "_index"
+            size: 100
+
+  # Ingestion rate
+  - name: ingestion_rate
+    team: platform
+    description: Documents ingested in the last minute
+    interval: 60s
+    indices: "_all"
+    on_error: zero
+    on_missing: zero
+    query:
+      size: 0
+      query:
+        range:
+          "@timestamp":
+            gte: "now-1m"

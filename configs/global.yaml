@@ -1,0 +1,28 @@
+# Global OpenSearch Exporter Configuration
+# This file contains connection settings and credentials managed by the platform team
+# Query definitions should go in separate files in the queries/ directory
+
+# OpenSearch connection settings
+opensearch_url: https://opensearch.example.com:9200
+
+# Authentication credentials (required)
+# The exporter will try each credential in order until one succeeds
+credentials:
+  - username: "${OS_USERNAME}"
+    password: "${OS_PASSWORD}"
+  # Backup credentials for failover
+  - username: "${OS_BACKUP_USERNAME}"
+    password: "${OS_BACKUP_PASSWORD}"
+
+# TLS configuration
+# Path to the CA certificate used to verify the OpenSearch endpoint
+ca_cert_path: /etc/ssl/certs/opensearch-ca.pem
+# Set to true only for testing environments
+insecure: false
+
+# Default timeout for queries
+timeout: 30s
+
+# Queries can be defined here, but it's recommended to use separate files
+# in the queries/ directory for team-specific queries
+queries: []
