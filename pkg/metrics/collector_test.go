@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/opensearch"
 )
@@ -36,9 +37,34 @@ func newTLSServer(t *testing.T) *httptest.Server {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"cluster_name":          "test",
 			"status":                "yellow",
+			"timed_out":             false,
 			"number_of_nodes":       float64(3),
 			"active_primary_shards": float64(5),
 			"active_shards":         float64(10),
+		})
+	})
+	mux.HandleFunc("/_nodes/stats", func(w http.ResponseWriter, r *http.Request) {
+		_, _, ok := r.BasicAuth()
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"_nodes": map[string]interface{}{"total": 1.0, "successful": 1.0, "failed": 0.0},
+			"nodes":  map[string]interface{}{},
+		})
+	})
+	mux.HandleFunc("/_stats", func(w http.ResponseWriter, r *http.Request) {
+		_, _, ok := r.BasicAuth()
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"_shards": map[string]interface{}{"total": 1.0, "successful": 1.0, "failed": 0.0},
+			"_all":    map[string]interface{}{},
 		})
 	})
 	mux.HandleFunc("/idx/_search", func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +75,8 @@ func newTLSServer(t *testing.T) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"took": float64(12),
+			"took":      float64(12),
+			"timed_out": false,
 			"hits": map[string]interface{}{
 				"total": map[string]interface{}{"value": float64(42)},
 			},
@@ -62,10 +89,11 @@ func newTLSServer(t *testing.T) *httptest.Server {
 }
 
 func waitForQueryResult(t *testing.T, c *Collector, name string, timeout time.Duration) {
+	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		c.resultsMutex.RLock()
-		_, ok := c.queryResults[name]
+		_, ok := c.queryMetrics[name]
 		c.resultsMutex.RUnlock()
 		if ok {
 			return
@@ -128,9 +156,14 @@ func TestCollector_UpAndQueryMetrics(t *testing.T) {
 		t.Fatalf("missing opensearch_query_success")
 	}
 
-	// hits total metric for my_query
-	if mf := findMetricFamily(mfs, "opensearch_query_my_query_hits_total"); mf == nil {
-		t.Fatalf("missing hits_total metric for my_query")
+	// hits metric for my_query (parser outputs _hits, not _hits_total)
+	if mf := findMetricFamily(mfs, "opensearch_query_my_query_hits"); mf == nil {
+		t.Fatalf("missing hits metric for my_query")
+	}
+
+	// cluster health status should be present via dynamic parser
+	if mf := findMetricFamily(mfs, "opensearch_cluster_health_status"); mf == nil {
+		t.Fatalf("missing opensearch_cluster_health_status")
 	}
 }
 
@@ -165,4 +198,3 @@ func TestCollector_PingFailureSetsUpZero(t *testing.T) {
 		t.Fatalf("expected opensearch_up=0")
 	}
 }
-

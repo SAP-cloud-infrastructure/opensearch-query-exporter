@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/opensearch"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/parser"
@@ -17,37 +18,30 @@ type Collector struct {
 	client *opensearch.Client
 	config *config.Config
 
-	// Metrics
-	up                  *prometheus.Desc
-	queryDuration       *prometheus.Desc
-	querySuccess        *prometheus.Desc
-	clusterHealthStatus *prometheus.Desc
-	clusterHealthNodes  *prometheus.Desc
-	clusterHealthShards *prometheus.Desc
+	// Static descriptors
+	up            *prometheus.Desc
+	queryDuration *prometheus.Desc
+	querySuccess  *prometheus.Desc
 
-	// Query results cache - stores current and previous results for error handling
-	queryResults map[string]*queryResult
-	resultsMutex sync.RWMutex
+	// Query results cache — keyed by query name, each value is a map of
+	// metric-name to MetricGroup produced by the latest run of that query.
+	queryMetrics      map[string]map[string]*parser.MetricGroup
+	querySuccessState map[string]bool
+	resultsMutex      sync.RWMutex
 
 	// Background query execution
 	stopChan chan struct{}
 	wg       sync.WaitGroup
 }
 
-type queryResult struct {
-	metrics         []prometheus.Metric
-	previousMetrics []prometheus.Metric // For preserve/zero strategies
-	timestamp       time.Time
-	success         bool
-}
-
 // NewCollector creates a new metrics collector
 func NewCollector(client *opensearch.Client, cfg *config.Config) *Collector {
 	c := &Collector{
-		client:       client,
-		config:       cfg,
-		queryResults: make(map[string]*queryResult),
-		stopChan:     make(chan struct{}),
+		client:            client,
+		config:            cfg,
+		queryMetrics:      make(map[string]map[string]*parser.MetricGroup),
+		querySuccessState: make(map[string]bool),
+		stopChan:          make(chan struct{}),
 
 		up: prometheus.NewDesc(
 			"opensearch_up",
@@ -64,21 +58,6 @@ func NewCollector(client *opensearch.Client, cfg *config.Config) *Collector {
 			"Whether the query was successful",
 			[]string{"query", "team"}, nil,
 		),
-		clusterHealthStatus: prometheus.NewDesc(
-			"opensearch_cluster_health_status",
-			"Cluster health status (0=green, 1=yellow, 2=red)",
-			[]string{"cluster"}, nil,
-		),
-		clusterHealthNodes: prometheus.NewDesc(
-			"opensearch_cluster_health_nodes_total",
-			"Total number of nodes in the cluster",
-			[]string{"cluster"}, nil,
-		),
-		clusterHealthShards: prometheus.NewDesc(
-			"opensearch_cluster_health_shards_total",
-			"Total number of shards in the cluster",
-			[]string{"cluster", "type"}, nil,
-		),
 	}
 
 	// Start background query execution
@@ -92,14 +71,10 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.up
 	ch <- c.queryDuration
 	ch <- c.querySuccess
-	ch <- c.clusterHealthStatus
-	ch <- c.clusterHealthNodes
-	ch <- c.clusterHealthShards
 }
 
 // Collect implements prometheus.Collector
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-	// Check if OpenSearch is up
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -113,6 +88,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	// Collect cluster health metrics
 	c.collectClusterHealth(ctx, ch)
 
+	// Collect nodes stats
+	c.collectNodesStats(ctx, ch)
+
+	// Collect indices stats
+	c.collectIndicesStats(ctx, ch)
+
 	// Collect query results
 	c.collectQueryResults(ch)
 }
@@ -124,34 +105,44 @@ func (c *Collector) collectClusterHealth(ctx context.Context, ch chan<- promethe
 		return
 	}
 
-	// Extract cluster name
-	clusterName, _ := health["cluster_name"].(string)
-	if clusterName == "" {
-		clusterName = "unknown"
+	raw := parser.ParseClusterHealth(health, []string{"opensearch", "cluster_health"})
+	grouped := parser.GroupMetrics(raw)
+	for name, g := range grouped {
+		for _, m := range g.ToPrometheus(name) {
+			ch <- m
+		}
+	}
+}
+
+func (c *Collector) collectNodesStats(ctx context.Context, ch chan<- prometheus.Metric) {
+	stats, err := c.client.NodesStats(ctx)
+	if err != nil {
+		slog.Warn("Failed to get nodes stats", "error", err)
+		return
 	}
 
-	// Health status
-	status, _ := health["status"].(string)
-	statusValue := float64(2) // default to red
-	switch status {
-	case "green":
-		statusValue = 0
-	case "yellow":
-		statusValue = 1
+	raw := parser.ParseNodesStats(stats, []string{"opensearch", "nodes_stats"})
+	grouped := parser.GroupMetrics(raw)
+	for name, g := range grouped {
+		for _, m := range g.ToPrometheus(name) {
+			ch <- m
+		}
 	}
-	ch <- prometheus.MustNewConstMetric(c.clusterHealthStatus, prometheus.GaugeValue, statusValue, clusterName)
+}
 
-	// Number of nodes
-	if nodes, ok := health["number_of_nodes"].(float64); ok {
-		ch <- prometheus.MustNewConstMetric(c.clusterHealthNodes, prometheus.GaugeValue, nodes, clusterName)
+func (c *Collector) collectIndicesStats(ctx context.Context, ch chan<- prometheus.Metric) {
+	stats, err := c.client.IndicesStats(ctx)
+	if err != nil {
+		slog.Warn("Failed to get indices stats", "error", err)
+		return
 	}
 
-	// Shards
-	if shards, ok := health["active_primary_shards"].(float64); ok {
-		ch <- prometheus.MustNewConstMetric(c.clusterHealthShards, prometheus.GaugeValue, shards, clusterName, "primary")
-	}
-	if shards, ok := health["active_shards"].(float64); ok {
-		ch <- prometheus.MustNewConstMetric(c.clusterHealthShards, prometheus.GaugeValue, shards, clusterName, "active")
+	raw := parser.ParseIndicesStats(stats, false, []string{"opensearch", "indices_stats"})
+	grouped := parser.GroupMetrics(raw)
+	for name, g := range grouped {
+		for _, m := range g.ToPrometheus(name) {
+			ch <- m
+		}
 	}
 }
 
@@ -159,41 +150,24 @@ func (c *Collector) collectQueryResults(ch chan<- prometheus.Metric) {
 	c.resultsMutex.RLock()
 	defer c.resultsMutex.RUnlock()
 
-	for queryName, result := range c.queryResults {
-		// Find the query config
-		var query *config.Query
-		for i := range c.config.Queries {
-			if c.config.Queries[i].Name == queryName {
-				query = &c.config.Queries[i]
-				break
-			}
-		}
+	for queryName, grouped := range c.queryMetrics {
+		// Find query config for team
+		query := findQuery(c.config.Queries, queryName)
 		if query == nil {
 			continue
 		}
 
-		if result.success {
-			// Query succeeded - emit current metrics
-			for _, metric := range result.metrics {
-				ch <- metric
-			}
-		} else {
-			// Query failed - apply OnError strategy
-			ch <- prometheus.MustNewConstMetric(c.querySuccess, prometheus.GaugeValue, 0, queryName, query.Team)
+		// Emit success
+		successVal := 0.0
+		if c.querySuccessState[queryName] {
+			successVal = 1.0
+		}
+		ch <- prometheus.MustNewConstMetric(c.querySuccess, prometheus.GaugeValue, successVal, queryName, query.Team)
 
-			switch query.OnError {
-			case config.StrategyPreserve:
-				// Keep metrics from last successful run
-				for _, metric := range result.previousMetrics {
-					ch <- metric
-				}
-			case config.StrategyZero:
-				// Emit zeroed versions of previous metrics
-				for _, metric := range zeroMetrics(result.previousMetrics) {
-					ch <- metric
-				}
-			case config.StrategyDrop:
-				// Don't emit any metrics (already handled by not iterating)
+		// Emit grouped metrics
+		for name, g := range grouped {
+			for _, m := range g.ToPrometheus(name) {
+				ch <- m
 			}
 		}
 	}
@@ -239,72 +213,57 @@ func (c *Collector) executeQuery(query config.Query) {
 	c.resultsMutex.Lock()
 	defer c.resultsMutex.Unlock()
 
-	// Get previous result for error handling strategies
-	previousResult := c.queryResults[query.Name]
-	var previousMetrics []prometheus.Metric
-	if previousResult != nil && previousResult.success {
-		previousMetrics = previousResult.metrics
-	} else if previousResult != nil {
-		previousMetrics = previousResult.previousMetrics
-	}
-
-	result := &queryResult{
-		timestamp:       time.Now(),
-		previousMetrics: previousMetrics,
-	}
+	oldGrouped := c.queryMetrics[query.Name]
 
 	if err != nil {
 		slog.Warn("Query failed", "query", query.Name, "error", err)
-		result.success = false
-		c.queryResults[query.Name] = result
+		c.querySuccessState[query.Name] = false
+		if oldGrouped != nil {
+			switch query.OnError {
+			case config.StrategyPreserve:
+				// keep old as-is
+			case config.StrategyZero:
+				c.queryMetrics[query.Name] = parser.MergeMetricGroups(oldGrouped, map[string]*parser.MetricGroup{}, true)
+			case config.StrategyDrop:
+				c.queryMetrics[query.Name] = map[string]*parser.MetricGroup{}
+			}
+		}
 		return
 	}
 
-	// Parse the response and extract metrics
-	metrics, err := parser.ParseResponse(response, query)
-	if err != nil {
-		slog.Warn("Failed to parse response", "query", query.Name, "error", err)
-		result.success = false
-		c.queryResults[query.Name] = result
-		return
+	// Parse the response into RawMetrics and group them
+	raw := parser.ParseQueryResponse(response, query)
+	newGrouped := parser.GroupMetrics(raw)
+
+	// Handle missing metrics strategy
+	if oldGrouped != nil && query.OnMissing != config.StrategyDrop {
+		zeroMissing := query.OnMissing == config.StrategyZero
+		newGrouped = parser.MergeMetricGroups(oldGrouped, newGrouped, zeroMissing)
 	}
 
-	// Handle OnMissing strategy - compare current metrics with previous
-	if previousMetrics != nil && query.OnMissing != config.StrategyDrop {
-		metrics = handleMissingMetrics(previousMetrics, metrics, query.OnMissing)
+	// Add duration metric to the grouped results
+	durationRM := parser.RawMetric{
+		Name:   "opensearch_query_duration_seconds",
+		Help:   "Duration of the query in seconds",
+		Labels: []parser.Label{{Name: "query", Value: query.Name}, {Name: "team", Value: query.Team}},
+		Value:  duration,
+	}
+	for name, g := range parser.GroupMetrics([]parser.RawMetric{durationRM}) {
+		newGrouped[name] = g
 	}
 
-	// Add query metadata metrics
-	result.metrics = append(metrics,
-		prometheus.MustNewConstMetric(c.queryDuration, prometheus.GaugeValue, duration, query.Name, query.Team),
-		prometheus.MustNewConstMetric(c.querySuccess, prometheus.GaugeValue, 1, query.Name, query.Team),
-	)
-	result.success = true
-
-	c.queryResults[query.Name] = result
+	c.queryMetrics[query.Name] = newGrouped
+	c.querySuccessState[query.Name] = true
 }
 
-// zeroMetrics creates zeroed versions of the given metrics
-func zeroMetrics(metrics []prometheus.Metric) []prometheus.Metric {
-	// Note: This is a simplified implementation. In practice, we'd need to
-	// extract the metric descriptors and labels and create new metrics with value 0.
-	// For now, we just return an empty slice since prometheus.Metric doesn't
-	// expose its value for modification.
-	// A production implementation would need to track metric metadata separately.
+// findQuery looks up a query by name in the slice.
+func findQuery(queries []config.Query, name string) *config.Query {
+	for i := range queries {
+		if queries[i].Name == name {
+			return &queries[i]
+		}
+	}
 	return nil
-}
-
-// handleMissingMetrics handles metrics that were present in previous run but not current
-func handleMissingMetrics(previous, current []prometheus.Metric, strategy config.ErrorStrategy) []prometheus.Metric {
-	// Note: This is a simplified implementation. A full implementation would need to:
-	// 1. Track metric identities (name + labels)
-	// 2. Compare previous vs current to find missing
-	// 3. Apply preserve/zero strategy to missing ones
-	//
-	// For now, we just return current metrics as-is.
-	// The OnMissing strategy is more relevant when specific label combinations disappear
-	// (e.g., a service stops reporting), which requires metric identity tracking.
-	return current
 }
 
 // Stop gracefully stops the collector
