@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/metrics"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/opensearch"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -91,8 +91,23 @@ func main() {
 	prometheus.MustRegister(collector)
 
 	// Set up HTTP server
-	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := client.Ping(ctx); err != nil {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
 <head><title>OpenSearch Exporter</title></head>
 <body>
@@ -102,9 +117,9 @@ func main() {
 </html>`))
 	})
 
-	// Start server
 	server := &http.Server{
 		Addr:         *listenAddress,
+		Handler:      mux,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
@@ -122,7 +137,9 @@ func main() {
 	}()
 
 	<-sigChan
-	slog.Info("Shutting down server...")
+	slog.Info("Shutting down...")
+
+	collector.Stop()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
