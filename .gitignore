@@ -1,7 +1,4 @@
-# Binaries (only in root directory)
 /opensearch-query-exporter
-/opensearch-query-exporter-*
-*.exe
 
 # IDE
 .idea/
@@ -11,7 +8,6 @@
 
 # OS
 .DS_Store
-Thumbs.db
 
 # Test coverage
 coverage.out
