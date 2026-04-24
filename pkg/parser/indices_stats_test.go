@@ -7,19 +7,19 @@ import (
 // TestParseIndicesStats_ClusterMode verifies that when parseIndices=false,
 // _all data is parsed and every metric carries index="_all".
 func TestParseIndicesStats_ClusterMode(t *testing.T) {
-	response := map[string]interface{}{
-		"_shards": map[string]interface{}{
+	response := map[string]any{
+		"_shards": map[string]any{
 			"total":      10.0,
 			"successful": 10.0,
 			"failed":     0.0,
 		},
-		"_all": map[string]interface{}{
-			"primaries": map[string]interface{}{
-				"docs": map[string]interface{}{
+		"_all": map[string]any{
+			"primaries": map[string]any{
+				"docs": map[string]any{
 					"count":   1234.0,
 					"deleted": 5.0,
 				},
-				"store": map[string]interface{}{
+				"store": map[string]any{
 					"size_in_bytes": 5678.0,
 				},
 			},
@@ -34,16 +34,16 @@ func TestParseIndicesStats_ClusterMode(t *testing.T) {
 
 	// Every metric must carry index=_all.
 	for _, m := range metrics {
-		if got := labelValue(m.Labels, "index"); got != "_all" {
+		if got := getLabelValue(m.Labels, "index"); got != "_all" {
 			t.Errorf("metric %s: want index=_all, got %q", m.Name, got)
 		}
 	}
 
 	// Spot-check primaries.docs.count.
 	docsCountName := buildMetricName([]string{"opensearch", "indices_stats", "primaries", "docs"}, "count")
-	m, ok := findMetric(metrics, docsCountName, map[string]string{"index": "_all"})
+	m, ok := findMetricWithLabels(metrics, docsCountName, map[string]string{"index": "_all"})
 	if !ok {
-		t.Fatalf("expected metric %q, not found; available: %v", docsCountName, metricNames(metrics))
+		t.Fatalf("expected metric %q, not found; available: %v", docsCountName, allMetricNames(metrics))
 	}
 	if m.Value != 1234.0 {
 		t.Errorf("docs.count: want 1234, got %v", m.Value)
@@ -51,9 +51,9 @@ func TestParseIndicesStats_ClusterMode(t *testing.T) {
 
 	// Spot-check primaries.store.size_in_bytes.
 	storeName := buildMetricName([]string{"opensearch", "indices_stats", "primaries", "store"}, "size_in_bytes")
-	m2, ok := findMetric(metrics, storeName, map[string]string{"index": "_all"})
+	m2, ok := findMetricWithLabels(metrics, storeName, map[string]string{"index": "_all"})
 	if !ok {
-		t.Fatalf("expected metric %q, not found; available: %v", storeName, metricNames(metrics))
+		t.Fatalf("expected metric %q, not found; available: %v", storeName, allMetricNames(metrics))
 	}
 	if m2.Value != 5678.0 {
 		t.Errorf("store.size_in_bytes: want 5678, got %v", m2.Value)
@@ -63,16 +63,16 @@ func TestParseIndicesStats_ClusterMode(t *testing.T) {
 // TestParseIndicesStats_IndicesMode verifies that when parseIndices=true,
 // each index in response["indices"] is parsed and carries its own index label.
 func TestParseIndicesStats_IndicesMode(t *testing.T) {
-	response := map[string]interface{}{
-		"_shards": map[string]interface{}{
+	response := map[string]any{
+		"_shards": map[string]any{
 			"total":      5.0,
 			"successful": 5.0,
 			"failed":     0.0,
 		},
-		"indices": map[string]interface{}{
-			"my-index": map[string]interface{}{
-				"primaries": map[string]interface{}{
-					"docs": map[string]interface{}{
+		"indices": map[string]any{
+			"my-index": map[string]any{
+				"primaries": map[string]any{
+					"docs": map[string]any{
 						"count":   42.0,
 						"deleted": 0.0,
 					},
@@ -89,16 +89,16 @@ func TestParseIndicesStats_IndicesMode(t *testing.T) {
 
 	// Every metric must carry index=my-index.
 	for _, m := range metrics {
-		if got := labelValue(m.Labels, "index"); got != "my-index" {
+		if got := getLabelValue(m.Labels, "index"); got != "my-index" {
 			t.Errorf("metric %s: want index=my-index, got %q", m.Name, got)
 		}
 	}
 
 	// Spot-check primaries.docs.count for my-index.
 	docsCountName := buildMetricName([]string{"opensearch", "indices_stats", "primaries", "docs"}, "count")
-	m, ok := findMetric(metrics, docsCountName, map[string]string{"index": "my-index"})
+	m, ok := findMetricWithLabels(metrics, docsCountName, map[string]string{"index": "my-index"})
 	if !ok {
-		t.Fatalf("expected metric %q with index=my-index, not found; available: %v", docsCountName, metricNames(metrics))
+		t.Fatalf("expected metric %q with index=my-index, not found; available: %v", docsCountName, allMetricNames(metrics))
 	}
 	if m.Value != 42.0 {
 		t.Errorf("docs.count: want 42, got %v", m.Value)
@@ -108,15 +108,15 @@ func TestParseIndicesStats_IndicesMode(t *testing.T) {
 // TestParseIndicesStats_FailedShards verifies that a response with
 // _shards.failed > 0 returns zero metrics.
 func TestParseIndicesStats_FailedShards(t *testing.T) {
-	response := map[string]interface{}{
-		"_shards": map[string]interface{}{
+	response := map[string]any{
+		"_shards": map[string]any{
 			"total":      10.0,
 			"successful": 8.0,
 			"failed":     2.0,
 		},
-		"_all": map[string]interface{}{
-			"primaries": map[string]interface{}{
-				"docs": map[string]interface{}{
+		"_all": map[string]any{
+			"primaries": map[string]any{
+				"docs": map[string]any{
 					"count": 999.0,
 				},
 			},
@@ -137,22 +137,22 @@ func TestParseIndicesStats_FailedShards(t *testing.T) {
 // TestParseIndicesStats_WithFields verifies that fielddata.fields dict entries
 // produce metrics with a "field" label carrying the field name.
 func TestParseIndicesStats_WithFields(t *testing.T) {
-	response := map[string]interface{}{
-		"_shards": map[string]interface{}{
+	response := map[string]any{
+		"_shards": map[string]any{
 			"total":      5.0,
 			"successful": 5.0,
 			"failed":     0.0,
 		},
-		"_all": map[string]interface{}{
-			"primaries": map[string]interface{}{
-				"fielddata": map[string]interface{}{
+		"_all": map[string]any{
+			"primaries": map[string]any{
+				"fielddata": map[string]any{
 					"memory_size_in_bytes": 0.0,
 					"evictions":            0.0,
-					"fields": map[string]interface{}{
-						"my_keyword_field": map[string]interface{}{
+					"fields": map[string]any{
+						"my_keyword_field": map[string]any{
 							"memory_size_in_bytes": 1024.0,
 						},
-						"another_field": map[string]interface{}{
+						"another_field": map[string]any{
 							"memory_size_in_bytes": 512.0,
 						},
 					},
@@ -172,24 +172,24 @@ func TestParseIndicesStats_WithFields(t *testing.T) {
 		[]string{"opensearch", "indices_stats", "primaries", "fielddata", "fields"},
 		"memory_size_in_bytes",
 	)
-	m, ok := findMetric(metrics, fieldsMemName, map[string]string{
+	m, ok := findMetricWithLabels(metrics, fieldsMemName, map[string]string{
 		"index": "_all",
 		"field": "my_keyword_field",
 	})
 	if !ok {
-		t.Fatalf("expected metric %q with field=my_keyword_field, not found; available: %v", fieldsMemName, metricNames(metrics))
+		t.Fatalf("expected metric %q with field=my_keyword_field, not found; available: %v", fieldsMemName, allMetricNames(metrics))
 	}
 	if m.Value != 1024.0 {
 		t.Errorf("my_keyword_field memory_size_in_bytes: want 1024, got %v", m.Value)
 	}
 
 	// Verify another_field entry has field label and correct value.
-	m2, ok := findMetric(metrics, fieldsMemName, map[string]string{
+	m2, ok := findMetricWithLabels(metrics, fieldsMemName, map[string]string{
 		"index": "_all",
 		"field": "another_field",
 	})
 	if !ok {
-		t.Fatalf("expected metric %q with field=another_field, not found; available: %v", fieldsMemName, metricNames(metrics))
+		t.Fatalf("expected metric %q with field=another_field, not found; available: %v", fieldsMemName, allMetricNames(metrics))
 	}
 	if m2.Value != 512.0 {
 		t.Errorf("another_field memory_size_in_bytes: want 512, got %v", m2.Value)

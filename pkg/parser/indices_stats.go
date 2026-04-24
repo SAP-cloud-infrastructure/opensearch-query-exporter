@@ -24,9 +24,9 @@ var indicesStatsSingularForms = map[string]string{
 //
 // metricPrefix is the metric name prefix segments
 // (e.g. []string{"opensearch", "indices_stats"}).
-func ParseIndicesStats(response map[string]interface{}, parseIndices bool, metricPrefix []string) []RawMetric {
+func ParseIndicesStats(response map[string]any, parseIndices bool, metricPrefix []string) []RawMetric {
 	// Check _shards.failed — abort if any shards failed.
-	if shardsBlock, ok := response["_shards"].(map[string]interface{}); ok {
+	if shardsBlock, ok := response["_shards"].(map[string]any); ok {
 		if failed, ok := toFloat64(shardsBlock["failed"]); ok && failed > 0 {
 			return nil
 		}
@@ -35,12 +35,12 @@ func ParseIndicesStats(response map[string]interface{}, parseIndices bool, metri
 	var metrics []RawMetric
 
 	if parseIndices {
-		indices, ok := response["indices"].(map[string]interface{})
+		indices, ok := response["indices"].(map[string]any)
 		if !ok {
 			return nil
 		}
 		for _, indexName := range sortedKeys(indices) {
-			indexData, ok := indices[indexName].(map[string]interface{})
+			indexData, ok := indices[indexName].(map[string]any)
 			if !ok {
 				continue
 			}
@@ -48,7 +48,7 @@ func ParseIndicesStats(response map[string]interface{}, parseIndices bool, metri
 			metrics = append(metrics, parseIndicesStatsBlock(indexData, metricPrefix, labels)...)
 		}
 	} else {
-		allData, ok := response["_all"].(map[string]interface{})
+		allData, ok := response["_all"].(map[string]any)
 		if !ok {
 			return nil
 		}
@@ -62,7 +62,7 @@ func ParseIndicesStats(response map[string]interface{}, parseIndices bool, metri
 // parseIndicesStatsBlock recursively walks a stats block and emits RawMetrics.
 // prefix is the accumulated metric name segments; labels are the accumulated
 // Prometheus labels so far.
-func parseIndicesStatsBlock(block map[string]interface{}, prefix []string, labels []Label) []RawMetric {
+func parseIndicesStatsBlock(block map[string]any, prefix []string, labels []Label) []RawMetric {
 	var metrics []RawMetric
 
 	for _, key := range sortedKeys(block) {
@@ -82,7 +82,7 @@ func parseIndicesStatsBlock(block map[string]interface{}, prefix []string, label
 				Value:  f,
 			})
 
-		case map[string]interface{}:
+		case map[string]any:
 			if indicesStatsBucketDictKeys[key] {
 				// Each sub-key is a bucket name; add a label for it.
 				labelName := indicesStatsSingularForms[key]
@@ -90,7 +90,7 @@ func parseIndicesStatsBlock(block map[string]interface{}, prefix []string, label
 					labelName = key
 				}
 				for _, bucketName := range sortedKeys(v) {
-					bucketData, ok := v[bucketName].(map[string]interface{})
+					bucketData, ok := v[bucketName].(map[string]any)
 					if !ok {
 						continue
 					}
@@ -101,7 +101,7 @@ func parseIndicesStatsBlock(block map[string]interface{}, prefix []string, label
 				metrics = append(metrics, parseIndicesStatsBlock(v, nextPrefix, labels)...)
 			}
 
-		case []interface{}:
+		case []any:
 			// indices stats has no bucket list keys — lists are skipped.
 			_ = v
 

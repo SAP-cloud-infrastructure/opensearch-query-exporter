@@ -2,7 +2,6 @@ package parser
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -35,35 +34,25 @@ var nodesStatsExcludedKeys = map[string]bool{
 	"timestamp": true,
 }
 
-// sortedKeys returns the keys of m in sorted order for deterministic output.
-func sortedKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // ParseNodesStats parses an _nodes/stats JSON response into []RawMetric.
 // metricPrefix is the metric name prefix segments
 // (e.g. []string{"opensearch", "nodes_stats"}).
-func ParseNodesStats(response map[string]interface{}, metricPrefix []string) []RawMetric {
+func ParseNodesStats(response map[string]any, metricPrefix []string) []RawMetric {
 	// Check _nodes.failed — abort if any node failed.
-	if nodesBlock, ok := response["_nodes"].(map[string]interface{}); ok {
+	if nodesBlock, ok := response["_nodes"].(map[string]any); ok {
 		if failed, ok := toFloat64(nodesBlock["failed"]); ok && failed > 0 {
 			return nil
 		}
 	}
 
-	nodes, ok := response["nodes"].(map[string]interface{})
+	nodes, ok := response["nodes"].(map[string]any)
 	if !ok {
 		return nil
 	}
 
 	var metrics []RawMetric
 	for _, nodeID := range sortedKeys(nodes) {
-		nodeData, ok := nodes[nodeID].(map[string]interface{})
+		nodeData, ok := nodes[nodeID].(map[string]any)
 		if !ok {
 			continue
 		}
@@ -83,7 +72,7 @@ func ParseNodesStats(response map[string]interface{}, metricPrefix []string) []R
 // prefix is the accumulated metric name segments up to (but not including) the
 // current block's parent key; each key is passed as suffix to buildMetricName.
 // labels are the accumulated Prometheus labels so far.
-func parseNodesStatsBlock(block map[string]interface{}, prefix []string, labels []Label) []RawMetric {
+func parseNodesStatsBlock(block map[string]any, prefix []string, labels []Label) []RawMetric {
 	var metrics []RawMetric
 
 	for _, key := range sortedKeys(block) {
@@ -108,7 +97,7 @@ func parseNodesStatsBlock(block map[string]interface{}, prefix []string, labels 
 				Value:  f,
 			})
 
-		case map[string]interface{}:
+		case map[string]any:
 			if nodesStatsBucketDictKeys[key] {
 				// Each sub-key is a bucket name; add a label for it.
 				labelName := nodesStatsSingularForms[key]
@@ -116,7 +105,7 @@ func parseNodesStatsBlock(block map[string]interface{}, prefix []string, labels 
 					labelName = key
 				}
 				for _, bucketName := range sortedKeys(v) {
-					bucketData, ok := v[bucketName].(map[string]interface{})
+					bucketData, ok := v[bucketName].(map[string]any)
 					if !ok {
 						continue
 					}
@@ -127,11 +116,11 @@ func parseNodesStatsBlock(block map[string]interface{}, prefix []string, labels 
 				metrics = append(metrics, parseNodesStatsBlock(v, nextPrefix, labels)...)
 			}
 
-		case []interface{}:
+		case []any:
 			labelField, isBucketList := nodesStatsBucketListKeys[key]
 			if isBucketList {
 				for _, item := range v {
-					itemMap, ok := item.(map[string]interface{})
+					itemMap, ok := item.(map[string]any)
 					if !ok {
 						continue
 					}

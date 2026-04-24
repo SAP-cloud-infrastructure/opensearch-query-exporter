@@ -16,14 +16,14 @@ var clusterHealthSingularForms = map[string]string{
 // ["opensearch", "cluster_health"].
 //
 // Returns nil when the response has timed_out set to true.
-func ParseClusterHealth(response map[string]interface{}, metricPrefix []string) []RawMetric {
+func ParseClusterHealth(response map[string]any, metricPrefix []string) []RawMetric {
 	timedOut, _ := response["timed_out"].(bool)
 	if timedOut {
 		return nil
 	}
 
 	// Shallow copy so we can delete fields without mutating the caller's map.
-	shallow := make(map[string]interface{}, len(response))
+	shallow := make(map[string]any, len(response))
 	for k, v := range response {
 		shallow[k] = v
 	}
@@ -33,7 +33,7 @@ func ParseClusterHealth(response map[string]interface{}, metricPrefix []string) 
 }
 
 // parseHealthBlock recursively converts a cluster-health block into RawMetrics.
-func parseHealthBlock(block map[string]interface{}, metricPrefix []string, labels []Label) []RawMetric {
+func parseHealthBlock(block map[string]any, metricPrefix []string, labels []Label) []RawMetric {
 	var metrics []RawMetric
 
 	// Handle status specially: numeric value + per-colour binary metrics.
@@ -106,7 +106,7 @@ func parseHealthBlock(block map[string]interface{}, metricPrefix []string, label
 				Value:  v,
 			})
 
-		case map[string]interface{}:
+		case map[string]any:
 			nestedPrefix := append(append([]string{}, metricPrefix...), key)
 
 			if singularLabel, ok := clusterHealthSingularForms[key]; ok {
@@ -119,7 +119,7 @@ func parseHealthBlock(block map[string]interface{}, metricPrefix []string, label
 
 				for _, childKey := range childKeys {
 					childVal := v[childKey]
-					if childBlock, ok := childVal.(map[string]interface{}); ok {
+					if childBlock, ok := childVal.(map[string]any); ok {
 						childLabels := appendLabel(labels, singularLabel, childKey)
 						sub := parseHealthBlock(childBlock, nestedPrefix, childLabels)
 						metrics = append(metrics, sub...)
