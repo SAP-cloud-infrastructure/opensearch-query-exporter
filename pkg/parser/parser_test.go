@@ -8,43 +8,11 @@ import (
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 )
 
-// queryFindMetric returns the first RawMetric whose Name equals name exactly.
-func queryFindMetric(metrics []RawMetric, name string) *RawMetric {
-	for i := range metrics {
-		if metrics[i].Name == name {
-			return &metrics[i]
-		}
-	}
-	return nil
-}
-
-// queryFindMetrics returns all RawMetrics whose Name equals name exactly.
-func queryFindMetrics(metrics []RawMetric, name string) []RawMetric {
-	var result []RawMetric
-	for _, m := range metrics {
-		if m.Name == name {
-			result = append(result, m)
-		}
-	}
-	return result
-}
-
-// queryLabelValue returns the value of a label with the given name on a RawMetric,
-// or "" if absent.
-func queryLabelValue(rm *RawMetric, labelName string) string {
-	for _, l := range rm.Labels {
-		if l.Name == labelName {
-			return l.Value
-		}
-	}
-	return ""
-}
-
 func TestParseQueryResponse_TimedOut(t *testing.T) {
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"timed_out": true,
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 100.0},
+		"hits": map[string]any{
+			"total": map[string]any{"value": 100.0},
 		},
 		"took": 50.0,
 	}
@@ -56,9 +24,9 @@ func TestParseQueryResponse_TimedOut(t *testing.T) {
 }
 
 func TestParseQueryResponse_HitsAndTook(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 123.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 123.0},
 		},
 		"took": 15.0,
 	}
@@ -69,7 +37,7 @@ func TestParseQueryResponse_HitsAndTook(t *testing.T) {
 		t.Fatalf("expected 2 metrics, got %d", len(metrics))
 	}
 
-	hitsMetric := queryFindMetric(metrics, "opensearch_query_my_query_hits")
+	hitsMetric := findMetricByName(metrics, "opensearch_query_my_query_hits")
 	if hitsMetric == nil {
 		t.Fatal("expected hits metric with name opensearch_query_my_query_hits")
 	}
@@ -77,7 +45,7 @@ func TestParseQueryResponse_HitsAndTook(t *testing.T) {
 		t.Fatalf("expected hits value 123, got %f", hitsMetric.Value)
 	}
 
-	tookMetric := queryFindMetric(metrics, "opensearch_query_my_query_took_milliseconds")
+	tookMetric := findMetricByName(metrics, "opensearch_query_my_query_took_milliseconds")
 	if tookMetric == nil {
 		t.Fatal("expected took metric with name opensearch_query_my_query_took_milliseconds")
 	}
@@ -87,15 +55,15 @@ func TestParseQueryResponse_HitsAndTook(t *testing.T) {
 }
 
 func TestParseQueryResponse_LegacyHitsTotal(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
+	resp := map[string]any{
+		"hits": map[string]any{
 			"total": 456.0, // Legacy format: total is a direct number
 		},
 	}
 	q := config.Query{Name: "legacy", Team: "ops"}
 	metrics := ParseQueryResponse(resp, q)
 
-	hitsMetric := queryFindMetric(metrics, "opensearch_query_legacy_hits")
+	hitsMetric := findMetricByName(metrics, "opensearch_query_legacy_hits")
 	if hitsMetric == nil {
 		t.Fatal("expected hits metric for legacy format")
 	}
@@ -105,17 +73,17 @@ func TestParseQueryResponse_LegacyHitsTotal(t *testing.T) {
 }
 
 func TestParseQueryResponse_DictBuckets(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 10.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 10.0},
 		},
-		"aggregations": map[string]interface{}{
-			"status_filter": map[string]interface{}{
-				"buckets": map[string]interface{}{
-					"errors": map[string]interface{}{
+		"aggregations": map[string]any{
+			"status_filter": map[string]any{
+				"buckets": map[string]any{
+					"errors": map[string]any{
 						"doc_count": 5.0,
 					},
-					"success": map[string]interface{}{
+					"success": map[string]any{
 						"doc_count": 95.0,
 					},
 				},
@@ -125,7 +93,7 @@ func TestParseQueryResponse_DictBuckets(t *testing.T) {
 	q := config.Query{Name: "q", Team: "sre"}
 	metrics := ParseQueryResponse(resp, q)
 
-	docCountMetrics := queryFindMetrics(metrics, "opensearch_query_q_status_filter_doc_count")
+	docCountMetrics := findMetricsByName(metrics, "opensearch_query_q_status_filter_doc_count")
 	if len(docCountMetrics) != 2 {
 		t.Fatalf("expected 2 dict bucket doc_count metrics, got %d", len(docCountMetrics))
 	}
@@ -133,7 +101,7 @@ func TestParseQueryResponse_DictBuckets(t *testing.T) {
 	// Collect label values for the status_filter label
 	labelMap := make(map[string]float64)
 	for _, m := range docCountMetrics {
-		lv := queryLabelValue(&m, "status_filter")
+		lv := getLabelValue(m.Labels, "status_filter")
 		labelMap[lv] = m.Value
 	}
 
@@ -146,22 +114,22 @@ func TestParseQueryResponse_DictBuckets(t *testing.T) {
 }
 
 func TestParseQueryResponse_CompositeKeys(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 0.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 0.0},
 		},
-		"aggregations": map[string]interface{}{
-			"composite_agg": map[string]interface{}{
-				"buckets": []interface{}{
-					map[string]interface{}{
-						"key": map[string]interface{}{
+		"aggregations": map[string]any{
+			"composite_agg": map[string]any{
+				"buckets": []any{
+					map[string]any{
+						"key": map[string]any{
 							"region":  "eu-west-1",
 							"service": "api",
 						},
 						"doc_count": 42.0,
 					},
-					map[string]interface{}{
-						"key": map[string]interface{}{
+					map[string]any{
+						"key": map[string]any{
 							"region":  "us-east-1",
 							"service": "web",
 						},
@@ -174,15 +142,15 @@ func TestParseQueryResponse_CompositeKeys(t *testing.T) {
 	q := config.Query{Name: "q", Team: "platform"}
 	metrics := ParseQueryResponse(resp, q)
 
-	docCountMetrics := queryFindMetrics(metrics, "opensearch_query_q_composite_agg_doc_count")
+	docCountMetrics := findMetricsByName(metrics, "opensearch_query_q_composite_agg_doc_count")
 	if len(docCountMetrics) != 2 {
 		t.Fatalf("expected 2 composite bucket doc_count metrics, got %d", len(docCountMetrics))
 	}
 
 	// Check that composite key labels are present with the aggKey_compKey format
 	for _, m := range docCountMetrics {
-		regionVal := queryLabelValue(&m, "composite_agg_region")
-		serviceVal := queryLabelValue(&m, "composite_agg_service")
+		regionVal := getLabelValue(m.Labels, "composite_agg_region")
+		serviceVal := getLabelValue(m.Labels, "composite_agg_service")
 		if regionVal == "" || serviceVal == "" {
 			t.Fatalf("expected composite labels composite_agg_region and composite_agg_service, got labels: %v", m.Labels)
 		}
@@ -204,20 +172,20 @@ func TestParseQueryResponse_CompositeKeys(t *testing.T) {
 }
 
 func TestParseQueryResponse_AllNumericFieldsInBucket(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 100.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 100.0},
 		},
-		"aggregations": map[string]interface{}{
-			"by_service": map[string]interface{}{
-				"buckets": []interface{}{
-					map[string]interface{}{
+		"aggregations": map[string]any{
+			"by_service": map[string]any{
+				"buckets": []any{
+					map[string]any{
 						"key":       "svc-a",
 						"doc_count": 50.0,
-						"avg_latency": map[string]interface{}{
+						"avg_latency": map[string]any{
 							"value": 120.5,
 						},
-						"max_latency": map[string]interface{}{
+						"max_latency": map[string]any{
 							"value": 500.0,
 						},
 					},
@@ -229,7 +197,7 @@ func TestParseQueryResponse_AllNumericFieldsInBucket(t *testing.T) {
 	metrics := ParseQueryResponse(resp, q)
 
 	// Should have: hits, doc_count, avg_latency.value, max_latency.value
-	docCount := queryFindMetric(metrics, "opensearch_query_q_by_service_doc_count")
+	docCount := findMetricByName(metrics, "opensearch_query_q_by_service_doc_count")
 	if docCount == nil {
 		t.Fatal("expected doc_count metric")
 	}
@@ -237,7 +205,7 @@ func TestParseQueryResponse_AllNumericFieldsInBucket(t *testing.T) {
 		t.Fatalf("expected doc_count 50, got %f", docCount.Value)
 	}
 
-	avgLatency := queryFindMetric(metrics, "opensearch_query_q_by_service_avg_latency_value")
+	avgLatency := findMetricByName(metrics, "opensearch_query_q_by_service_avg_latency_value")
 	if avgLatency == nil {
 		t.Fatal("expected avg_latency value metric")
 	}
@@ -245,7 +213,7 @@ func TestParseQueryResponse_AllNumericFieldsInBucket(t *testing.T) {
 		t.Fatalf("expected avg_latency 120.5, got %f", avgLatency.Value)
 	}
 
-	maxLatency := queryFindMetric(metrics, "opensearch_query_q_by_service_max_latency_value")
+	maxLatency := findMetricByName(metrics, "opensearch_query_q_by_service_max_latency_value")
 	if maxLatency == nil {
 		t.Fatal("expected max_latency value metric")
 	}
@@ -255,20 +223,20 @@ func TestParseQueryResponse_AllNumericFieldsInBucket(t *testing.T) {
 
 	// All bucket metrics should carry the by_service label
 	for _, m := range []*RawMetric{docCount, avgLatency, maxLatency} {
-		if queryLabelValue(m, "by_service") != "svc-a" {
+		if getLabelValue(m.Labels, "by_service") != "svc-a" {
 			t.Fatalf("expected by_service=svc-a label, got labels: %v", m.Labels)
 		}
 	}
 }
 
 func TestParseQueryResponse_CustomMetricMapping(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 10.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 10.0},
 		},
-		"custom": map[string]interface{}{
+		"custom": map[string]any{
 			"value":  7.0,
-			"labels": map[string]interface{}{"env": "prod"},
+			"labels": map[string]any{"env": "prod"},
 		},
 	}
 	q := config.Query{
@@ -286,7 +254,7 @@ func TestParseQueryResponse_CustomMetricMapping(t *testing.T) {
 	}
 	metrics := ParseQueryResponse(resp, q)
 
-	customMetric := queryFindMetric(metrics, "opensearch_query_errors_by_service_custom_metric")
+	customMetric := findMetricByName(metrics, "opensearch_query_errors_by_service_custom_metric")
 	if customMetric == nil {
 		t.Fatal("expected custom_metric")
 	}
@@ -298,29 +266,29 @@ func TestParseQueryResponse_CustomMetricMapping(t *testing.T) {
 	}
 
 	// Check static label
-	if queryLabelValue(customMetric, "static_label") != "static_value" {
+	if getLabelValue(customMetric.Labels, "static_label") != "static_value" {
 		t.Fatalf("expected static_label=static_value, got labels: %v", customMetric.Labels)
 	}
 
 	// Check dynamic label from LabelPaths
-	if queryLabelValue(customMetric, "env") != "prod" {
+	if getLabelValue(customMetric.Labels, "env") != "prod" {
 		t.Fatalf("expected env=prod from LabelPaths, got labels: %v", customMetric.Labels)
 	}
 }
 
 func TestParseQueryResponse_AfterKeySkipped(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 0.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 0.0},
 		},
-		"aggregations": map[string]interface{}{
-			"composite_agg": map[string]interface{}{
-				"after_key": map[string]interface{}{
+		"aggregations": map[string]any{
+			"composite_agg": map[string]any{
+				"after_key": map[string]any{
 					"region": "eu-west-1",
 				},
-				"buckets": []interface{}{
-					map[string]interface{}{
-						"key":       map[string]interface{}{"region": "eu-west-1"},
+				"buckets": []any{
+					map[string]any{
+						"key":       map[string]any{"region": "eu-west-1"},
 						"doc_count": 10.0,
 					},
 				},
@@ -339,23 +307,23 @@ func TestParseQueryResponse_AfterKeySkipped(t *testing.T) {
 }
 
 func TestParseQueryResponse_NestedSubAggregations(t *testing.T) {
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 100.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 100.0},
 		},
-		"aggregations": map[string]interface{}{
-			"by_region": map[string]interface{}{
-				"buckets": []interface{}{
-					map[string]interface{}{
+		"aggregations": map[string]any{
+			"by_region": map[string]any{
+				"buckets": []any{
+					map[string]any{
 						"key":       "eu",
 						"doc_count": 60.0,
-						"by_status": map[string]interface{}{
-							"buckets": []interface{}{
-								map[string]interface{}{
+						"by_status": map[string]any{
+							"buckets": []any{
+								map[string]any{
 									"key":       "200",
 									"doc_count": 50.0,
 								},
-								map[string]interface{}{
+								map[string]any{
 									"key":       "500",
 									"doc_count": 10.0,
 								},
@@ -370,17 +338,17 @@ func TestParseQueryResponse_NestedSubAggregations(t *testing.T) {
 	metrics := ParseQueryResponse(resp, q)
 
 	// Find nested doc_count metrics for by_status
-	nestedMetrics := queryFindMetrics(metrics, "opensearch_query_q_by_region_by_status_doc_count")
+	nestedMetrics := findMetricsByName(metrics, "opensearch_query_q_by_region_by_status_doc_count")
 	if len(nestedMetrics) != 2 {
 		t.Fatalf("expected 2 nested by_status doc_count metrics, got %d", len(nestedMetrics))
 	}
 
 	// Each should have both by_region and by_status labels
 	for _, m := range nestedMetrics {
-		if queryLabelValue(&m, "by_region") != "eu" {
-			t.Fatalf("expected by_region=eu, got %q", queryLabelValue(&m, "by_region"))
+		if getLabelValue(m.Labels, "by_region") != "eu" {
+			t.Fatalf("expected by_region=eu, got %q", getLabelValue(m.Labels, "by_region"))
 		}
-		statusVal := queryLabelValue(&m, "by_status")
+		statusVal := getLabelValue(m.Labels, "by_status")
 		if statusVal != "200" && statusVal != "500" {
 			t.Fatalf("expected by_status to be 200 or 500, got %q", statusVal)
 		}
@@ -389,17 +357,17 @@ func TestParseQueryResponse_NestedSubAggregations(t *testing.T) {
 
 func TestParseQueryResponse_NoKeyBucket(t *testing.T) {
 	// Buckets without keys (e.g., filter aggregation) should get filter_N labels
-	resp := map[string]interface{}{
-		"hits": map[string]interface{}{
-			"total": map[string]interface{}{"value": 10.0},
+	resp := map[string]any{
+		"hits": map[string]any{
+			"total": map[string]any{"value": 10.0},
 		},
-		"aggregations": map[string]interface{}{
-			"filters_agg": map[string]interface{}{
-				"buckets": []interface{}{
-					map[string]interface{}{
+		"aggregations": map[string]any{
+			"filters_agg": map[string]any{
+				"buckets": []any{
+					map[string]any{
 						"doc_count": 3.0,
 					},
-					map[string]interface{}{
+					map[string]any{
 						"doc_count": 7.0,
 					},
 				},
@@ -409,7 +377,7 @@ func TestParseQueryResponse_NoKeyBucket(t *testing.T) {
 	q := config.Query{Name: "q", Team: "t"}
 	metrics := ParseQueryResponse(resp, q)
 
-	docCountMetrics := queryFindMetrics(metrics, "opensearch_query_q_filters_agg_doc_count")
+	docCountMetrics := findMetricsByName(metrics, "opensearch_query_q_filters_agg_doc_count")
 	if len(docCountMetrics) != 2 {
 		t.Fatalf("expected 2 filter doc_count metrics, got %d", len(docCountMetrics))
 	}
@@ -417,7 +385,7 @@ func TestParseQueryResponse_NoKeyBucket(t *testing.T) {
 	// Check filter_N labels
 	labelMap := map[string]float64{}
 	for _, m := range docCountMetrics {
-		lv := queryLabelValue(&m, "filters_agg")
+		lv := getLabelValue(m.Labels, "filters_agg")
 		labelMap[lv] = m.Value
 	}
 	if labelMap["filter_0"] != 3.0 {
@@ -429,9 +397,9 @@ func TestParseQueryResponse_NoKeyBucket(t *testing.T) {
 }
 
 func TestExtractValueFromPath_Success(t *testing.T) {
-	data := map[string]interface{}{
-		"a": map[string]interface{}{
-			"b": map[string]interface{}{"c": 42.0},
+	data := map[string]any{
+		"a": map[string]any{
+			"b": map[string]any{"c": 42.0},
 		},
 	}
 	v, err := extractValueFromPath(data, "a.b.c")
@@ -444,7 +412,7 @@ func TestExtractValueFromPath_Success(t *testing.T) {
 }
 
 func TestExtractValueFromPath_NotFound(t *testing.T) {
-	data := map[string]interface{}{"a": map[string]interface{}{"b": 1.0}}
+	data := map[string]any{"a": map[string]any{"b": 1.0}}
 	if _, err := extractValueFromPath(data, "a.x.c"); err == nil {
 		t.Fatalf("expected error for missing key")
 	}
@@ -452,7 +420,7 @@ func TestExtractValueFromPath_NotFound(t *testing.T) {
 
 func TestToFloat64(t *testing.T) {
 	cases := []struct {
-		input    interface{}
+		input    any
 		expected float64
 		ok       bool
 	}{

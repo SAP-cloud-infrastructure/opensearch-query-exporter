@@ -5,14 +5,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 )
 
 // ParseQueryResponse parses an OpenSearch query response and returns RawMetrics.
 // It handles hits, took, custom MetricMappings, and recursive aggregation parsing.
-func ParseQueryResponse(response map[string]interface{}, query config.Query) []RawMetric {
+func ParseQueryResponse(response map[string]any, query config.Query) []RawMetric {
 	// Check timed_out — return empty if true
 	if timedOut, ok := response["timed_out"]; ok {
 		if b, ok := timedOut.(bool); ok && b {
@@ -24,7 +22,7 @@ func ParseQueryResponse(response map[string]interface{}, query config.Query) []R
 	prefix := "opensearch_query_" + sanitizeMetricName(query.Name)
 
 	// Parse hits
-	if hits, ok := response["hits"].(map[string]interface{}); ok {
+	if hits, ok := response["hits"].(map[string]any); ok {
 		if total := extractHitsTotal(hits); total >= 0 {
 			metrics = append(metrics, RawMetric{
 				Name:  prefix + "_hits",
@@ -53,7 +51,7 @@ func ParseQueryResponse(response map[string]interface{}, query config.Query) []R
 	}
 
 	// Parse aggregations if present
-	if aggs, ok := response["aggregations"].(map[string]interface{}); ok {
+	if aggs, ok := response["aggregations"].(map[string]any); ok {
 		aggMetrics := parseAgg("", aggs, []string{prefix}, nil)
 		metrics = append(metrics, aggMetrics...)
 	}
@@ -62,9 +60,9 @@ func ParseQueryResponse(response map[string]interface{}, query config.Query) []R
 }
 
 // extractHitsTotal extracts hits.total from either OpenSearch 2.x format (dict) or legacy format (number).
-func extractHitsTotal(hits map[string]interface{}) float64 {
+func extractHitsTotal(hits map[string]any) float64 {
 	// OpenSearch 2.x format: {"total": {"value": N}}
-	if total, ok := hits["total"].(map[string]interface{}); ok {
+	if total, ok := hits["total"].(map[string]any); ok {
 		if value, ok := toFloat64(total["value"]); ok {
 			return value
 		}
@@ -77,7 +75,7 @@ func extractHitsTotal(hits map[string]interface{}) float64 {
 }
 
 // extractMappedMetric extracts a single RawMetric based on a MetricMapping configuration.
-func extractMappedMetric(response map[string]interface{}, query config.Query, metricConfig config.MetricMapping) (RawMetric, error) {
+func extractMappedMetric(response map[string]any, query config.Query, metricConfig config.MetricMapping) (RawMetric, error) {
 	value, err := extractValueFromPath(response, metricConfig.Path)
 	if err != nil {
 		return RawMetric{}, err
@@ -140,7 +138,7 @@ func extractMappedMetric(response map[string]interface{}, query config.Query, me
 //   - "after_key" when "buckets" also present → skip (composite paging)
 //   - dict value → recurse into sub-aggregation
 //   - numeric value → emit metric
-func parseAgg(aggKey string, agg map[string]interface{}, metricPrefix []string, labels []Label) []RawMetric {
+func parseAgg(aggKey string, agg map[string]any, metricPrefix []string, labels []Label) []RawMetric {
 	var metrics []RawMetric
 
 	// Check if "buckets" exists in this aggregation (for after_key skipping)
@@ -158,10 +156,10 @@ func parseAgg(aggKey string, agg map[string]interface{}, metricPrefix []string, 
 
 		if key == "buckets" {
 			if isList(value) {
-				bucketList := value.([]interface{})
+				bucketList := value.([]any)
 				metrics = append(metrics, parseBuckets(aggKey, bucketList, metricPrefix, labels)...)
 			} else if isDict(value) {
-				bucketDict := value.(map[string]interface{})
+				bucketDict := value.(map[string]any)
 				metrics = append(metrics, parseBucketsFixed(aggKey, bucketDict, metricPrefix, labels)...)
 			}
 			continue
@@ -174,7 +172,7 @@ func parseAgg(aggKey string, agg map[string]interface{}, metricPrefix []string, 
 
 		if isDict(value) {
 			// Recurse into sub-object aggregations
-			subAgg := value.(map[string]interface{})
+			subAgg := value.(map[string]any)
 			subPrefix := append(clonePrefix(metricPrefix), sanitizeMetricName(key))
 			metrics = append(metrics, parseAgg(key, subAgg, subPrefix, cloneLabels(labels))...)
 			continue
@@ -196,11 +194,11 @@ func parseAgg(aggKey string, agg map[string]interface{}, metricPrefix []string, 
 }
 
 // parseBuckets handles list-based buckets (the common case).
-func parseBuckets(aggKey string, buckets []interface{}, metricPrefix []string, labels []Label) []RawMetric {
+func parseBuckets(aggKey string, buckets []any, metricPrefix []string, labels []Label) []RawMetric {
 	var metrics []RawMetric
 
 	for i, item := range buckets {
-		bucketMap, ok := item.(map[string]interface{})
+		bucketMap, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -210,7 +208,7 @@ func parseBuckets(aggKey string, buckets []interface{}, metricPrefix []string, l
 		if rawKey, hasKey := bucketMap["key"]; hasKey {
 			if isDict(rawKey) {
 				// Composite aggregation keys: key is a dict with multiple key/value pairs
-				compositeKey := rawKey.(map[string]interface{})
+				compositeKey := rawKey.(map[string]any)
 				compKeys := make([]string, 0, len(compositeKey))
 				for ck := range compositeKey {
 					compKeys = append(compKeys, ck)
@@ -241,7 +239,7 @@ func parseBuckets(aggKey string, buckets []interface{}, metricPrefix []string, l
 }
 
 // parseBucketsFixed handles dict-based (fixed/named) buckets.
-func parseBucketsFixed(aggKey string, buckets map[string]interface{}, metricPrefix []string, labels []Label) []RawMetric {
+func parseBucketsFixed(aggKey string, buckets map[string]any, metricPrefix []string, labels []Label) []RawMetric {
 	var metrics []RawMetric
 
 	// Sort bucket keys for stability
@@ -253,7 +251,7 @@ func parseBucketsFixed(aggKey string, buckets map[string]interface{}, metricPref
 
 	for _, bucketKey := range bucketKeys {
 		bucketData := buckets[bucketKey]
-		bucketMap, ok := bucketData.(map[string]interface{})
+		bucketMap, ok := bucketData.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -266,13 +264,13 @@ func parseBucketsFixed(aggKey string, buckets map[string]interface{}, metricPref
 }
 
 // extractValueFromPath navigates a nested map using a dot-separated path.
-func extractValueFromPath(data interface{}, path string) (interface{}, error) {
+func extractValueFromPath(data any, path string) (any, error) {
 	parts := strings.Split(path, ".")
 	current := data
 
 	for _, part := range parts {
 		switch v := current.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			var ok bool
 			current, ok = v[part]
 			if !ok {
@@ -288,7 +286,7 @@ func extractValueFromPath(data interface{}, path string) (interface{}, error) {
 
 // toFloat64 converts a JSON numeric value to float64.
 // JSON only produces float64, so no reflect fallback is needed.
-func toFloat64(value interface{}) (float64, bool) {
+func toFloat64(value any) (float64, bool) {
 	switch v := value.(type) {
 	case float64:
 		return v, true
@@ -330,15 +328,25 @@ func sanitizeLabelName(name string) string {
 
 // --- Helper functions ---
 
-// isList checks if v is a JSON array ([]interface{}).
-func isList(v interface{}) bool {
-	_, ok := v.([]interface{})
+// sortedKeys returns the keys of m in sorted order for deterministic output.
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// isList checks if v is a JSON array ([]any).
+func isList(v any) bool {
+	_, ok := v.([]any)
 	return ok
 }
 
-// isDict checks if v is a JSON object (map[string]interface{}).
-func isDict(v interface{}) bool {
-	_, ok := v.(map[string]interface{})
+// isDict checks if v is a JSON object (map[string]any).
+func isDict(v any) bool {
+	_, ok := v.(map[string]any)
 	return ok
 }
 
@@ -372,16 +380,4 @@ func buildMetricName(prefix []string, suffix string) string {
 		parts = append(parts, suffix)
 	}
 	return sanitizeMetricName(strings.Join(parts, "_"))
-}
-
-// ParseResponse is a backward-compatible wrapper around ParseQueryResponse.
-// Deprecated: Use ParseQueryResponse and convert RawMetrics via GroupMetrics/ToPrometheus.
-// This will be removed when the collector is rewritten.
-func ParseResponse(response map[string]interface{}, query config.Query) ([]prometheus.Metric, error) {
-	raw := ParseQueryResponse(response, query)
-	metrics := make([]prometheus.Metric, 0, len(raw))
-	for _, rm := range raw {
-		metrics = append(metrics, rm.ToPrometheus())
-	}
-	return metrics, nil
 }
