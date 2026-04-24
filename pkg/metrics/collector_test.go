@@ -34,7 +34,7 @@ func newTLSServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"cluster_name":          "test",
 			"status":                "yellow",
 			"timed_out":             false,
@@ -50,9 +50,9 @@ func newTLSServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"_nodes": map[string]interface{}{"total": 1.0, "successful": 1.0, "failed": 0.0},
-			"nodes":  map[string]interface{}{},
+		json.NewEncoder(w).Encode(map[string]any{
+			"_nodes": map[string]any{"total": 1.0, "successful": 1.0, "failed": 0.0},
+			"nodes":  map[string]any{},
 		})
 	})
 	mux.HandleFunc("/_stats", func(w http.ResponseWriter, r *http.Request) {
@@ -62,9 +62,9 @@ func newTLSServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"_shards": map[string]interface{}{"total": 1.0, "successful": 1.0, "failed": 0.0},
-			"_all":    map[string]interface{}{},
+		json.NewEncoder(w).Encode(map[string]any{
+			"_shards": map[string]any{"total": 1.0, "successful": 1.0, "failed": 0.0},
+			"_all":    map[string]any{},
 		})
 	})
 	mux.HandleFunc("/idx/_search", func(w http.ResponseWriter, r *http.Request) {
@@ -74,11 +74,11 @@ func newTLSServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"took":      float64(12),
 			"timed_out": false,
-			"hits": map[string]interface{}{
-				"total": map[string]interface{}{"value": float64(42)},
+			"hits": map[string]any{
+				"total": map[string]any{"value": float64(42)},
 			},
 		})
 	})
@@ -126,7 +126,7 @@ func TestCollector_UpAndQueryMetrics(t *testing.T) {
 			Team:     "team1",
 			Interval: 100 * time.Millisecond,
 			Indices:  "idx",
-			Query:    map[string]interface{}{"size": 0},
+			Query:    map[string]any{"size": 0},
 		}},
 	}
 	client, err := opensearch.NewClient(cfg)

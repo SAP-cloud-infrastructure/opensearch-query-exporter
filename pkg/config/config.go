@@ -40,15 +40,15 @@ type Credential struct {
 
 // Query represents a team's query configuration
 type Query struct {
-	Name        string                 `yaml:"name"`
-	Team        string                 `yaml:"team"`
-	Description string                 `yaml:"description"`
-	Interval    time.Duration          `yaml:"interval"`
-	Indices     string                 `yaml:"indices"`
-	Query       map[string]interface{} `yaml:"query"`
-	Metrics     []MetricMapping        `yaml:"metrics"`
-	OnError     ErrorStrategy          `yaml:"on_error"`
-	OnMissing   ErrorStrategy          `yaml:"on_missing"`
+	Name        string          `yaml:"name"`
+	Team        string          `yaml:"team"`
+	Description string          `yaml:"description"`
+	Interval    time.Duration   `yaml:"interval"`
+	Indices     string          `yaml:"indices"`
+	Query       map[string]any  `yaml:"query"`
+	Metrics     []MetricMapping `yaml:"metrics"`
+	OnError     ErrorStrategy   `yaml:"on_error"`
+	OnMissing   ErrorStrategy   `yaml:"on_missing"`
 }
 
 // MetricMapping defines how to extract metrics from query results
