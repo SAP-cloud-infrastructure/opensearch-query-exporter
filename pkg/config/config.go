@@ -72,6 +72,9 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	// Expand environment variables in config (e.g. $OS_PASSWORD or ${OS_PASSWORD})
+	data = []byte(os.ExpandEnv(string(data)))
+
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
@@ -151,6 +154,8 @@ func loadQueriesFile(path string) ([]Query, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
+
+	data = []byte(os.ExpandEnv(string(data)))
 
 	var qf QueriesFile
 	if err := yaml.Unmarshal(data, &qf); err != nil {
