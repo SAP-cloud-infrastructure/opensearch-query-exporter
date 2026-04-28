@@ -191,7 +191,7 @@ func validateAndSetQueryDefaults(q *Query, index int, maxRange time.Duration) er
 		return fmt.Errorf("query %s: service is required", q.Name)
 	}
 	if q.Interval == 0 {
-		q.Interval = 60 * time.Second
+		q.Interval = 300 * time.Second
 	}
 	if q.Indices == "" {
 		q.Indices = "_all"
