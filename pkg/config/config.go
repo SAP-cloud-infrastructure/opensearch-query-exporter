@@ -26,13 +26,16 @@ const (
 
 // Config represents the main configuration structure
 type Config struct {
-	OpenSearchURL  string        `yaml:"opensearch_url"`
-	Credentials    []Credential  `yaml:"credentials"`
-	CACertPath     string        `yaml:"ca_cert_path"`
-	Insecure       bool          `yaml:"insecure"`
-	Timeout        time.Duration `yaml:"timeout"`
-	MaxQueryRange  time.Duration `yaml:"max_query_range"`
-	Queries        []Query       `yaml:"queries"`
+	OpenSearchURL        string        `yaml:"opensearch_url"`
+	Credentials          []Credential  `yaml:"credentials"`
+	CACertPath           string        `yaml:"ca_cert_path"`
+	Insecure             bool          `yaml:"insecure"`
+	Timeout              time.Duration `yaml:"timeout"`
+	MaxQueryRange        time.Duration `yaml:"max_query_range"`
+	CollectClusterHealth bool          `yaml:"collect_cluster_health"`
+	CollectNodesStats    bool          `yaml:"collect_nodes_stats"`
+	CollectIndicesStats  bool          `yaml:"collect_indices_stats"`
+	Queries              []Query       `yaml:"queries"`
 }
 
 // Credential represents a set of authentication credentials
@@ -43,15 +46,16 @@ type Credential struct {
 
 // Query represents a team's query configuration
 type Query struct {
-	Name        string          `yaml:"name"`
-	Team        string          `yaml:"team"`
-	Description string          `yaml:"description"`
-	Interval    time.Duration   `yaml:"interval"`
-	Indices     string          `yaml:"indices"`
-	Query       map[string]any  `yaml:"query"`
-	Metrics     []MetricMapping `yaml:"metrics"`
-	OnError     ErrorStrategy   `yaml:"on_error"`
-	OnMissing   ErrorStrategy   `yaml:"on_missing"`
+	Name         string          `yaml:"name"`
+	SupportGroup string          `yaml:"support_group"`
+	Service      string          `yaml:"service"`
+	Description  string          `yaml:"description"`
+	Interval     time.Duration   `yaml:"interval"`
+	Indices      string          `yaml:"indices"`
+	Query        map[string]any  `yaml:"query"`
+	Metrics      []MetricMapping `yaml:"metrics"`
+	OnError      ErrorStrategy   `yaml:"on_error"`
+	OnMissing    ErrorStrategy   `yaml:"on_missing"`
 }
 
 // MetricMapping defines how to extract metrics from query results
@@ -180,8 +184,11 @@ func validateAndSetQueryDefaults(q *Query, index int, maxRange time.Duration) er
 	if q.Name == "" {
 		return fmt.Errorf("query #%d: name is required", index+1)
 	}
-	if q.Team == "" {
-		return fmt.Errorf("query %s: team is required", q.Name)
+	if q.SupportGroup == "" {
+		return fmt.Errorf("query %s: support_group is required", q.Name)
+	}
+	if q.Service == "" {
+		return fmt.Errorf("query %s: service is required", q.Name)
 	}
 	if q.Interval == 0 {
 		q.Interval = 60 * time.Second

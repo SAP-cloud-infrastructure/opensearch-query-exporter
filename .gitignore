@@ -12,3 +12,5 @@
 # Test coverage
 coverage.out
 coverage.html
+/exporter
+.claude/

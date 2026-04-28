@@ -51,12 +51,12 @@ func NewCollector(client *opensearch.Client, cfg *config.Config) *Collector {
 		queryDuration: prometheus.NewDesc(
 			"opensearch_query_duration_seconds",
 			"Duration of the query in seconds",
-			[]string{"query", "team"}, nil,
+			[]string{"query", "support_group", "service"}, nil,
 		),
 		querySuccess: prometheus.NewDesc(
 			"opensearch_query_success",
 			"Whether the query was successful",
-			[]string{"query", "team"}, nil,
+			[]string{"query", "support_group", "service"}, nil,
 		),
 	}
 
@@ -85,14 +85,20 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	}
 	ch <- prometheus.MustNewConstMetric(c.up, prometheus.GaugeValue, 1)
 
-	// Collect cluster health metrics
-	c.collectClusterHealth(ctx, ch)
+	// Collect cluster health metrics (disabled by default)
+	if c.config.CollectClusterHealth {
+		c.collectClusterHealth(ctx, ch)
+	}
 
-	// Collect nodes stats
-	c.collectNodesStats(ctx, ch)
+	// Collect nodes stats (disabled by default)
+	if c.config.CollectNodesStats {
+		c.collectNodesStats(ctx, ch)
+	}
 
-	// Collect indices stats
-	c.collectIndicesStats(ctx, ch)
+	// Collect indices stats (disabled by default)
+	if c.config.CollectIndicesStats {
+		c.collectIndicesStats(ctx, ch)
+	}
 
 	// Collect query results
 	c.collectQueryResults(ch)
@@ -162,7 +168,7 @@ func (c *Collector) collectQueryResults(ch chan<- prometheus.Metric) {
 		if c.querySuccessState[queryName] {
 			successVal = 1.0
 		}
-		ch <- prometheus.MustNewConstMetric(c.querySuccess, prometheus.GaugeValue, successVal, queryName, query.Team)
+		ch <- prometheus.MustNewConstMetric(c.querySuccess, prometheus.GaugeValue, successVal, queryName, query.SupportGroup, query.Service)
 
 		// Emit grouped metrics
 		for name, g := range grouped {
@@ -204,7 +210,7 @@ func (c *Collector) executeQuery(query config.Query) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.config.Timeout)
 	defer cancel()
 
-	slog.Debug("Executing query", "query", query.Name, "team", query.Team)
+	slog.Debug("Executing query", "query", query.Name, "support_group", query.SupportGroup)
 
 	// Execute the search
 	response, err := c.client.Search(ctx, query.Indices, query.Query)
@@ -245,7 +251,7 @@ func (c *Collector) executeQuery(query config.Query) {
 	durationRM := parser.RawMetric{
 		Name:   "opensearch_query_duration_seconds",
 		Help:   "Duration of the query in seconds",
-		Labels: []parser.Label{{Name: "query", Value: query.Name}, {Name: "team", Value: query.Team}},
+		Labels: []parser.Label{{Name: "query", Value: query.Name}, {Name: "support_group", Value: query.SupportGroup}, {Name: "service", Value: query.Service}},
 		Value:  duration,
 	}
 	for name, g := range parser.GroupMetrics([]parser.RawMetric{durationRM}) {

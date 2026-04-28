@@ -92,11 +92,12 @@ func main() {
 
 	// Create metrics collector
 	collector := metrics.NewCollector(client, cfg)
-	prometheus.MustRegister(collector)
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(collector)
 
 	// Set up HTTP server
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))

@@ -117,16 +117,18 @@ func TestCollector_UpAndQueryMetrics(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config.Config{
-		OpenSearchURL: srv.URL,
-		Credentials:   []config.Credential{{Username: "u", Password: "p"}},
-		Insecure:      true,
-		Timeout:       2 * time.Second,
+		OpenSearchURL:        srv.URL,
+		Credentials:          []config.Credential{{Username: "u", Password: "p"}},
+		Insecure:             true,
+		Timeout:              2 * time.Second,
+		CollectClusterHealth: true,
 		Queries: []config.Query{{
-			Name:     "my_query",
-			Team:     "team1",
-			Interval: 100 * time.Millisecond,
-			Indices:  "idx",
-			Query:    map[string]any{"size": 0},
+			Name:         "my_query",
+			SupportGroup: "observability",
+			Service:      "logs",
+			Interval:     100 * time.Millisecond,
+			Indices:      "idx",
+			Query:        map[string]any{"size": 0},
 		}},
 	}
 	client, err := opensearch.NewClient(cfg)

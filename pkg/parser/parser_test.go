@@ -16,7 +16,7 @@ func TestParseQueryResponse_TimedOut(t *testing.T) {
 		},
 		"took": 50.0,
 	}
-	q := config.Query{Name: "test", Team: "core"}
+	q := config.Query{Name: "test", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 	if len(metrics) != 0 {
 		t.Fatalf("expected 0 metrics for timed_out response, got %d", len(metrics))
@@ -30,7 +30,7 @@ func TestParseQueryResponse_HitsAndTook(t *testing.T) {
 		},
 		"took": 15.0,
 	}
-	q := config.Query{Name: "my query", Team: "core"}
+	q := config.Query{Name: "my query", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	if len(metrics) != 2 {
@@ -60,7 +60,7 @@ func TestParseQueryResponse_LegacyHitsTotal(t *testing.T) {
 			"total": 456.0, // Legacy format: total is a direct number
 		},
 	}
-	q := config.Query{Name: "legacy", Team: "ops"}
+	q := config.Query{Name: "legacy", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	hitsMetric := findMetricByName(metrics, "opensearch_query_legacy_hits")
@@ -90,7 +90,7 @@ func TestParseQueryResponse_DictBuckets(t *testing.T) {
 			},
 		},
 	}
-	q := config.Query{Name: "q", Team: "sre"}
+	q := config.Query{Name: "q", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	docCountMetrics := findMetricsByName(metrics, "opensearch_query_q_status_filter_doc_count")
@@ -139,7 +139,7 @@ func TestParseQueryResponse_CompositeKeys(t *testing.T) {
 			},
 		},
 	}
-	q := config.Query{Name: "q", Team: "platform"}
+	q := config.Query{Name: "q", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	docCountMetrics := findMetricsByName(metrics, "opensearch_query_q_composite_agg_doc_count")
@@ -193,7 +193,7 @@ func TestParseQueryResponse_AllNumericFieldsInBucket(t *testing.T) {
 			},
 		},
 	}
-	q := config.Query{Name: "q", Team: "sre"}
+	q := config.Query{Name: "q", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	// Should have: hits, doc_count, avg_latency.value, max_latency.value
@@ -240,8 +240,8 @@ func TestParseQueryResponse_CustomMetricMapping(t *testing.T) {
 		},
 	}
 	q := config.Query{
-		Name: "errors_by_service",
-		Team: "sre",
+		Name:         "errors_by_service",
+		SupportGroup: "x", Service: "x",
 		Metrics: []config.MetricMapping{
 			{
 				Name:       "custom_metric",
@@ -295,7 +295,7 @@ func TestParseQueryResponse_AfterKeySkipped(t *testing.T) {
 			},
 		},
 	}
-	q := config.Query{Name: "q", Team: "t"}
+	q := config.Query{Name: "q", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	// after_key should be skipped — no metric with "after_key" in the name
@@ -334,7 +334,7 @@ func TestParseQueryResponse_NestedSubAggregations(t *testing.T) {
 			},
 		},
 	}
-	q := config.Query{Name: "q", Team: "t"}
+	q := config.Query{Name: "q", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	// Find nested doc_count metrics for by_status
@@ -374,7 +374,7 @@ func TestParseQueryResponse_NoKeyBucket(t *testing.T) {
 			},
 		},
 	}
-	q := config.Query{Name: "q", Team: "t"}
+	q := config.Query{Name: "q", SupportGroup: "x", Service: "x"}
 	metrics := ParseQueryResponse(resp, q)
 
 	docCountMetrics := findMetricsByName(metrics, "opensearch_query_q_filters_agg_doc_count")

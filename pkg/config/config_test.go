@@ -26,7 +26,8 @@ insecure: true
 timeout: 5s
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -52,7 +53,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -71,7 +73,8 @@ opensearch_url: https://localhost:9200
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -93,7 +96,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -115,7 +119,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     query:
       size: 0
 `
@@ -141,7 +146,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     on_error: preserve
     on_missing: zero
     query:
@@ -169,7 +175,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     on_error: invalid_strategy
     query:
       size: 0
@@ -205,14 +212,16 @@ queries: []
 	team1Yaml := `
 queries:
   - name: team1_query
-    team: team1
+    support_group: team1
+    service: logs
     query:
       size: 0
 `
 	team2Yaml := `
 queries:
   - name: team2_query
-    team: team2
+    support_group: team2
+    service: logs
     on_error: preserve
     query:
       size: 0
@@ -236,10 +245,10 @@ queries:
 	// Verify queries were loaded
 	foundTeam1, foundTeam2 := false, false
 	for _, q := range cfg.Queries {
-		if q.Name == "team1_query" && q.Team == "team1" {
+		if q.Name == "team1_query" && q.SupportGroup == "team1" {
 			foundTeam1 = true
 		}
-		if q.Name == "team2_query" && q.Team == "team2" && q.OnError == StrategyPreserve {
+		if q.Name == "team2_query" && q.SupportGroup == "team2" && q.OnError == StrategyPreserve {
 			foundTeam2 = true
 		}
 	}
@@ -268,7 +277,8 @@ func TestLoadQueriesDir_SkipsNonYaml(t *testing.T) {
 	yamlContent := `
 queries:
   - name: test
-    team: test
+    support_group: test
+    service: logs
     query:
       size: 0
 `
@@ -329,7 +339,8 @@ insecure: true
 max_query_range: 168h
 queries:
   - name: too_wide
-    team: sre
+    support_group: sre
+    service: logs
     query:
       size: 0
       query:
@@ -359,7 +370,8 @@ insecure: true
 max_query_range: 168h
 queries:
   - name: ok_query
-    team: sre
+    support_group: sre
+    service: logs
     query:
       size: 0
       query:
@@ -385,7 +397,8 @@ credentials:
 insecure: true
 queries:
   - name: no_limit
-    team: sre
+    support_group: sre
+    service: logs
     query:
       size: 0
       query:
@@ -412,7 +425,8 @@ insecure: true
 max_query_range: 168h
 queries:
   - name: nested
-    team: sre
+    support_group: sre
+    service: logs
     query:
       size: 0
       query:
@@ -441,7 +455,8 @@ insecure: true
 max_query_range: 168h
 queries:
   - name: weeks
-    team: sre
+    support_group: sre
+    service: logs
     query:
       size: 0
       query:
