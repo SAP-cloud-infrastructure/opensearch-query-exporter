@@ -318,3 +318,155 @@ queries:
 		t.Fatalf("expected error for missing team field")
 	}
 }
+
+func TestMaxQueryRange_RejectsExceedingRange(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: too_wide
+    team: sre
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-30d"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for query exceeding max_query_range")
+	}
+	if !contains(err.Error(), "exceeds max_query_range") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestMaxQueryRange_AllowsWithinRange(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: ok_query
+    team: sre
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+}
+
+func TestMaxQueryRange_SkipsWhenZero(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+queries:
+  - name: no_limit
+    team: sre
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-365d"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected success when max_query_range is not set, got error: %v", err)
+	}
+}
+
+func TestMaxQueryRange_NestedRange(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: nested
+    team: sre
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - bool:
+                filter:
+                  - range:
+                      "@timestamp":
+                        gte: "now-8d"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for nested range exceeding max_query_range")
+	}
+}
+
+func TestMaxQueryRange_WeeksUnit(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: weeks
+    team: sre
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-2w"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for 2w range exceeding 7d max_query_range")
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
+}
+
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
