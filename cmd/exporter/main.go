@@ -65,8 +65,12 @@ func main() {
 	if *opensearchURL != "https://localhost:9200" {
 		cfg.OpenSearchURL = *opensearchURL
 	}
-	cfg.Insecure = *insecure
-	cfg.Timeout = *timeout
+	if *insecure {
+		cfg.Insecure = true
+	}
+	if *timeout != 30*time.Second {
+		cfg.Timeout = *timeout
+	}
 
 	// Create OpenSearch client
 	client, err := opensearch.NewClient(cfg)
