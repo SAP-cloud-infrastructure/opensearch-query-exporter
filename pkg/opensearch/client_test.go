@@ -227,7 +227,7 @@ func TestClient_Search_And_Health_Endpoints(t *testing.T) {
 		t.Fatalf("indices stats: %v", err)
 	}
 
-	q := map[string]interface{}{"size": 0}
+	q := map[string]any{"size": 0}
 	if _, err := client.Search(t.Context(), "idx", q); err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestClient_Search_FailoverOnUnauthorized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	if _, err := client.Search(t.Context(), "idx", map[string]interface{}{"size": 0}); err != nil {
+	if _, err := client.Search(t.Context(), "idx", map[string]any{"size": 0}); err != nil {
 		t.Fatalf("search with failover should succeed: %v", err)
 	}
 }

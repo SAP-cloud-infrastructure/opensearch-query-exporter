@@ -26,7 +26,8 @@ insecure: true
 timeout: 5s
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -52,7 +53,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -71,7 +73,8 @@ opensearch_url: https://localhost:9200
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -93,7 +96,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     description: test
     query:
       size: 0
@@ -115,7 +119,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     query:
       size: 0
 `
@@ -141,7 +146,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     on_error: preserve
     on_missing: zero
     query:
@@ -169,7 +175,8 @@ credentials:
 insecure: true
 queries:
   - name: q1
-    team: t1
+    support_group: t1
+    service: logs
     on_error: invalid_strategy
     query:
       size: 0
@@ -205,14 +212,16 @@ queries: []
 	team1Yaml := `
 queries:
   - name: team1_query
-    team: team1
+    support_group: team1
+    service: logs
     query:
       size: 0
 `
 	team2Yaml := `
 queries:
   - name: team2_query
-    team: team2
+    support_group: team2
+    service: logs
     on_error: preserve
     query:
       size: 0
@@ -236,10 +245,10 @@ queries:
 	// Verify queries were loaded
 	foundTeam1, foundTeam2 := false, false
 	for _, q := range cfg.Queries {
-		if q.Name == "team1_query" && q.Team == "team1" {
+		if q.Name == "team1_query" && q.SupportGroup == "team1" {
 			foundTeam1 = true
 		}
-		if q.Name == "team2_query" && q.Team == "team2" && q.OnError == StrategyPreserve {
+		if q.Name == "team2_query" && q.SupportGroup == "team2" && q.OnError == StrategyPreserve {
 			foundTeam2 = true
 		}
 	}
@@ -268,7 +277,8 @@ func TestLoadQueriesDir_SkipsNonYaml(t *testing.T) {
 	yamlContent := `
 queries:
   - name: test
-    team: test
+    support_group: test
+    service: logs
     query:
       size: 0
 `
@@ -317,4 +327,161 @@ queries:
 	if err := LoadQueriesDir(cfg, dir); err == nil {
 		t.Fatalf("expected error for missing team field")
 	}
+}
+
+func TestMaxQueryRange_RejectsExceedingRange(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: too_wide
+    support_group: sre
+    service: logs
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-30d"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for query exceeding max_query_range")
+	}
+	if !contains(err.Error(), "exceeds max_query_range") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestMaxQueryRange_AllowsWithinRange(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: ok_query
+    support_group: sre
+    service: logs
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-5m"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+}
+
+func TestMaxQueryRange_SkipsWhenZero(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+queries:
+  - name: no_limit
+    support_group: sre
+    service: logs
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-365d"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected success when max_query_range is not set, got error: %v", err)
+	}
+}
+
+func TestMaxQueryRange_NestedRange(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: nested
+    support_group: sre
+    service: logs
+    query:
+      size: 0
+      query:
+        bool:
+          must:
+            - bool:
+                filter:
+                  - range:
+                      "@timestamp":
+                        gte: "now-8d"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for nested range exceeding max_query_range")
+	}
+}
+
+func TestMaxQueryRange_WeeksUnit(t *testing.T) {
+	yaml := `
+opensearch_url: https://localhost:9200
+credentials:
+  - username: user
+    password: pass
+insecure: true
+max_query_range: 168h
+queries:
+  - name: weeks
+    support_group: sre
+    service: logs
+    query:
+      size: 0
+      query:
+        bool:
+          filter:
+            - range:
+                "@timestamp":
+                  gte: "now-2w"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for 2w range exceeding 7d max_query_range")
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
+}
+
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

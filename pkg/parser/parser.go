@@ -2,196 +2,275 @@ package parser
 
 import (
 	"fmt"
-	"reflect"
+	"sort"
 	"strings"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 )
 
-// ParseResponse parses an OpenSearch response and extracts metrics based on the query configuration
-func ParseResponse(response map[string]interface{}, query config.Query) ([]prometheus.Metric, error) {
-	var metrics []prometheus.Metric
+// ParseQueryResponse parses an OpenSearch query response and returns RawMetrics.
+// It handles hits, took, custom MetricMappings, and recursive aggregation parsing.
+func ParseQueryResponse(response map[string]any, query config.Query) []RawMetric {
+	// Check timed_out — return empty if true
+	if timedOut, ok := response["timed_out"]; ok {
+		if b, ok := timedOut.(bool); ok && b {
+			return nil
+		}
+	}
 
-	// Parse hits.total
-	if hits, ok := response["hits"].(map[string]interface{}); ok {
+	var metrics []RawMetric
+	prefix := "opensearch_query_" + sanitizeMetricName(query.Name)
+
+	// Parse hits
+	if hits, ok := response["hits"].(map[string]any); ok {
 		if total := extractHitsTotal(hits); total >= 0 {
-			desc := prometheus.NewDesc(
-				fmt.Sprintf("opensearch_query_%s_hits_total", sanitizeMetricName(query.Name)),
-				"Total number of hits for the query",
-				[]string{"team"}, nil,
-			)
-			metrics = append(metrics, prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, total, query.Team))
+			metrics = append(metrics, RawMetric{
+				Name:  prefix + "_hits",
+				Help:  "Total number of hits for the query",
+				Value: total,
+			})
 		}
 	}
 
 	// Parse took time
-	if took, ok := extractFloat(response["took"]); ok {
-		desc := prometheus.NewDesc(
-			fmt.Sprintf("opensearch_query_%s_took_milliseconds", sanitizeMetricName(query.Name)),
-			"Time taken for the query in milliseconds",
-			[]string{"team"}, nil,
-		)
-		metrics = append(metrics, prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, took, query.Team))
+	if took, ok := toFloat64(response["took"]); ok {
+		metrics = append(metrics, RawMetric{
+			Name:  prefix + "_took_milliseconds",
+			Help:  "Time taken for the query in milliseconds",
+			Value: took,
+		})
 	}
 
-	// Parse configured metrics
+	// Parse configured MetricMappings
 	for _, metricConfig := range query.Metrics {
-		metric, err := extractMetric(response, query, metricConfig)
+		rm, err := extractMappedMetric(response, query, metricConfig)
 		if err != nil {
-			// Log but don't fail the entire parsing
 			continue
 		}
-		if metric != nil {
-			metrics = append(metrics, metric)
-		}
+		metrics = append(metrics, rm)
 	}
 
 	// Parse aggregations if present
-	if aggs, ok := response["aggregations"].(map[string]interface{}); ok {
-		aggMetrics := parseAggregations(aggs, query.Name, query.Team, nil)
+	if aggs, ok := response["aggregations"].(map[string]any); ok {
+		aggMetrics := parseAgg("", aggs, []string{prefix}, nil)
 		metrics = append(metrics, aggMetrics...)
 	}
 
-	return metrics, nil
+	return metrics
 }
 
-func extractHitsTotal(hits map[string]interface{}) float64 {
-	// OpenSearch 2.x format
-	if total, ok := hits["total"].(map[string]interface{}); ok {
-		if value, ok := extractFloat(total["value"]); ok {
+// extractHitsTotal extracts hits.total from either OpenSearch 2.x format (dict) or legacy format (number).
+func extractHitsTotal(hits map[string]any) float64 {
+	// OpenSearch 2.x format: {"total": {"value": N}}
+	if total, ok := hits["total"].(map[string]any); ok {
+		if value, ok := toFloat64(total["value"]); ok {
 			return value
 		}
 	}
-	// Legacy format
-	if total, ok := extractFloat(hits["total"]); ok {
+	// Legacy format: {"total": N}
+	if total, ok := toFloat64(hits["total"]); ok {
 		return total
 	}
 	return -1
 }
 
-func extractMetric(response map[string]interface{}, query config.Query, metricConfig config.MetricMapping) (prometheus.Metric, error) {
-	// Extract value from path
+// extractMappedMetric extracts a single RawMetric based on a MetricMapping configuration.
+func extractMappedMetric(response map[string]any, query config.Query, metricConfig config.MetricMapping) (RawMetric, error) {
 	value, err := extractValueFromPath(response, metricConfig.Path)
 	if err != nil {
-		return nil, err
+		return RawMetric{}, err
 	}
 
-	floatValue, ok := extractFloat(value)
+	floatValue, ok := toFloat64(value)
 	if !ok {
-		return nil, fmt.Errorf("path %s does not resolve to a numeric value", metricConfig.Path)
+		return RawMetric{}, fmt.Errorf("path %s does not resolve to a numeric value", metricConfig.Path)
 	}
 
-	// Prepare labels
-	labels := make(map[string]string)
-	labelNames := []string{"team"}
-	labelValues := []string{query.Team}
+	var labels []Label
 
-	// Add static labels
-	for k, v := range metricConfig.Labels {
-		labels[k] = v
-		labelNames = append(labelNames, k)
-		labelValues = append(labelValues, v)
-	}
-
-	// Add dynamic labels from paths
-	for labelName, labelPath := range metricConfig.LabelPaths {
-		labelValue, err := extractValueFromPath(response, labelPath)
-		if err == nil {
-			labelNames = append(labelNames, labelName)
-			labelValues = append(labelValues, fmt.Sprintf("%v", labelValue))
+	// Add static labels (sorted for stability)
+	if len(metricConfig.Labels) > 0 {
+		staticKeys := make([]string, 0, len(metricConfig.Labels))
+		for k := range metricConfig.Labels {
+			staticKeys = append(staticKeys, k)
+		}
+		sort.Strings(staticKeys)
+		for _, k := range staticKeys {
+			labels = appendLabel(labels, k, metricConfig.Labels[k])
 		}
 	}
 
-	// Create metric
+	// Add dynamic labels from paths (sorted for stability)
+	if len(metricConfig.LabelPaths) > 0 {
+		dynKeys := make([]string, 0, len(metricConfig.LabelPaths))
+		for k := range metricConfig.LabelPaths {
+			dynKeys = append(dynKeys, k)
+		}
+		sort.Strings(dynKeys)
+		for _, labelName := range dynKeys {
+			labelValue, err := extractValueFromPath(response, metricConfig.LabelPaths[labelName])
+			if err == nil {
+				labels = appendLabel(labels, labelName, fmt.Sprintf("%v", labelValue))
+			}
+		}
+	}
+
 	metricName := fmt.Sprintf("opensearch_query_%s_%s", sanitizeMetricName(query.Name), sanitizeMetricName(metricConfig.Name))
 	help := metricConfig.Help
 	if help == "" {
 		help = fmt.Sprintf("Metric %s from query %s", metricConfig.Name, query.Name)
 	}
 
-	desc := prometheus.NewDesc(metricName, help, labelNames, nil)
-	return prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, floatValue, labelValues...), nil
+	return RawMetric{
+		Name:   metricName,
+		Help:   help,
+		Labels: labels,
+		Value:  floatValue,
+	}, nil
 }
 
-func parseAggregations(aggs map[string]interface{}, queryName, teamName string, parentLabels map[string]string) []prometheus.Metric {
-	var metrics []prometheus.Metric
+// parseAgg recursively parses an aggregation node and emits RawMetrics.
+//
+// Algorithm:
+//   - For each key/value in the aggregation dict:
+//   - "buckets" + list  → parseBuckets
+//   - "buckets" + dict  → parseBucketsFixed
+//   - "after_key" when "buckets" also present → skip (composite paging)
+//   - dict value → recurse into sub-aggregation
+//   - numeric value → emit metric
+func parseAgg(aggKey string, agg map[string]any, metricPrefix []string, labels []Label) []RawMetric {
+	var metrics []RawMetric
 
-	for aggName, aggData := range aggs {
-		if aggMap, ok := aggData.(map[string]interface{}); ok {
-			// Handle bucket aggregations
-			if buckets, ok := aggMap["buckets"].([]interface{}); ok {
-				for _, bucket := range buckets {
-					if bucketMap, ok := bucket.(map[string]interface{}); ok {
-						labels := make(map[string]string)
-						for k, v := range parentLabels {
-							labels[k] = v
-						}
+	// Check if "buckets" exists in this aggregation (for after_key skipping)
+	_, hasBuckets := agg["buckets"]
 
-						// Extract bucket key
-						if key, ok := bucketMap["key"]; ok {
-							labels[sanitizeLabelName(aggName)] = fmt.Sprintf("%v", key)
-						}
+	// Sort keys for deterministic output
+	keys := make([]string, 0, len(agg))
+	for k := range agg {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 
-						// Extract metrics from bucket
-						bucketMetrics := extractBucketMetrics(bucketMap, queryName, teamName, labels)
-						metrics = append(metrics, bucketMetrics...)
+	for _, key := range keys {
+		value := agg[key]
 
-						// Recursively parse sub-aggregations
-						subMetrics := parseAggregations(bucketMap, queryName, teamName, labels)
-						metrics = append(metrics, subMetrics...)
-					}
+		if key == "buckets" {
+			if isList(value) {
+				bucketList := value.([]any)
+				metrics = append(metrics, parseBuckets(aggKey, bucketList, metricPrefix, labels)...)
+			} else if isDict(value) {
+				bucketDict := value.(map[string]any)
+				metrics = append(metrics, parseBucketsFixed(aggKey, bucketDict, metricPrefix, labels)...)
+			}
+			continue
+		}
+
+		// Skip after_key when buckets is present in same aggregation (composite paging)
+		if key == "after_key" && hasBuckets {
+			continue
+		}
+
+		if isDict(value) {
+			// Recurse into sub-object aggregations
+			subAgg := value.(map[string]any)
+			subPrefix := append(clonePrefix(metricPrefix), sanitizeMetricName(key))
+			metrics = append(metrics, parseAgg(key, subAgg, subPrefix, cloneLabels(labels))...)
+			continue
+		}
+
+		if v, ok := toFloat64(value); ok {
+			// Emit numeric field as a metric
+			name := strings.Join(append(clonePrefix(metricPrefix), sanitizeMetricName(key)), "_")
+			metrics = append(metrics, RawMetric{
+				Name:   name,
+				Help:   fmt.Sprintf("Aggregation field %s", key),
+				Labels: cloneLabels(labels),
+				Value:  v,
+			})
+		}
+	}
+
+	return metrics
+}
+
+// parseBuckets handles list-based buckets (the common case).
+func parseBuckets(aggKey string, buckets []any, metricPrefix []string, labels []Label) []RawMetric {
+	var metrics []RawMetric
+
+	for i, item := range buckets {
+		bucketMap, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		bucketLabels := cloneLabels(labels)
+
+		if rawKey, hasKey := bucketMap["key"]; hasKey {
+			if isDict(rawKey) {
+				// Composite aggregation keys: key is a dict with multiple key/value pairs
+				compositeKey := rawKey.(map[string]any)
+				compKeys := make([]string, 0, len(compositeKey))
+				for ck := range compositeKey {
+					compKeys = append(compKeys, ck)
+				}
+				sort.Strings(compKeys)
+				for _, ck := range compKeys {
+					labelName := sanitizeLabelName(aggKey) + "_" + sanitizeLabelName(ck)
+					bucketLabels = appendLabel(bucketLabels, labelName, fmt.Sprintf("%v", compositeKey[ck]))
 				}
 			} else {
-				// Handle metric aggregations (value-based)
-				if value, ok := extractFloat(aggMap["value"]); ok {
-					labelNames := []string{"team"}
-					labelValues := []string{teamName}
-
-					for k, v := range parentLabels {
-						labelNames = append(labelNames, k)
-						labelValues = append(labelValues, v)
-					}
-
-					metricName := fmt.Sprintf("opensearch_query_%s_%s", sanitizeMetricName(queryName), sanitizeMetricName(aggName))
-					desc := prometheus.NewDesc(metricName, fmt.Sprintf("Aggregation %s from query %s", aggName, queryName), labelNames, nil)
-					metrics = append(metrics, prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, labelValues...))
-				}
+				// Simple key
+				bucketLabels = appendLabel(bucketLabels, sanitizeLabelName(aggKey), fmt.Sprintf("%v", rawKey))
 			}
+			delete(bucketMap, "key")
+		} else {
+			// No key — use filter_N pattern
+			bucketLabels = appendLabel(bucketLabels, sanitizeLabelName(aggKey), fmt.Sprintf("filter_%d", i))
 		}
+
+		// Remove key_as_string — it's a display artifact
+		delete(bucketMap, "key_as_string")
+
+		// Recurse into the bucket itself
+		metrics = append(metrics, parseAgg(aggKey, bucketMap, metricPrefix, bucketLabels)...)
 	}
 
 	return metrics
 }
 
-func extractBucketMetrics(bucket map[string]interface{}, queryName, teamName string, labels map[string]string) []prometheus.Metric {
-	var metrics []prometheus.Metric
+// parseBucketsFixed handles dict-based (fixed/named) buckets.
+func parseBucketsFixed(aggKey string, buckets map[string]any, metricPrefix []string, labels []Label) []RawMetric {
+	var metrics []RawMetric
 
-	// Extract doc_count
-	if docCount, ok := extractFloat(bucket["doc_count"]); ok {
-		labelNames := []string{"team"}
-		labelValues := []string{teamName}
+	// Sort bucket keys for stability
+	bucketKeys := make([]string, 0, len(buckets))
+	for k := range buckets {
+		bucketKeys = append(bucketKeys, k)
+	}
+	sort.Strings(bucketKeys)
 
-		for k, v := range labels {
-			labelNames = append(labelNames, k)
-			labelValues = append(labelValues, v)
+	for _, bucketKey := range bucketKeys {
+		bucketData := buckets[bucketKey]
+		bucketMap, ok := bucketData.(map[string]any)
+		if !ok {
+			continue
 		}
 
-		metricName := fmt.Sprintf("opensearch_query_%s_doc_count", sanitizeMetricName(queryName))
-		desc := prometheus.NewDesc(metricName, fmt.Sprintf("Document count from query %s", queryName), labelNames, nil)
-		metrics = append(metrics, prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, docCount, labelValues...))
+		bucketLabels := appendLabel(cloneLabels(labels), sanitizeLabelName(aggKey), bucketKey)
+		metrics = append(metrics, parseAgg(aggKey, bucketMap, metricPrefix, bucketLabels)...)
 	}
 
 	return metrics
 }
 
-func extractValueFromPath(data interface{}, path string) (interface{}, error) {
+// extractValueFromPath navigates a nested map using a dot-separated path.
+func extractValueFromPath(data any, path string) (any, error) {
 	parts := strings.Split(path, ".")
 	current := data
 
 	for _, part := range parts {
 		switch v := current.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			var ok bool
 			current, ok = v[part]
 			if !ok {
@@ -205,7 +284,9 @@ func extractValueFromPath(data interface{}, path string) (interface{}, error) {
 	return current, nil
 }
 
-func extractFloat(value interface{}) (float64, bool) {
+// toFloat64 converts a JSON numeric value to float64.
+// JSON only produces float64, so no reflect fallback is needed.
+func toFloat64(value any) (float64, bool) {
 	switch v := value.(type) {
 	case float64:
 		return v, true
@@ -213,33 +294,14 @@ func extractFloat(value interface{}) (float64, bool) {
 		return float64(v), true
 	case int:
 		return float64(v), true
-	case int32:
-		return float64(v), true
 	case int64:
 		return float64(v), true
-	case uint:
-		return float64(v), true
-	case uint32:
-		return float64(v), true
-	case uint64:
-		return float64(v), true
-	default:
-		// Try reflection for other numeric types
-		rv := reflect.ValueOf(value)
-		switch rv.Kind() {
-		case reflect.Float32, reflect.Float64:
-			return rv.Float(), true
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			return float64(rv.Int()), true
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return float64(rv.Uint()), true
-		}
 	}
 	return 0, false
 }
 
+// sanitizeMetricName replaces non-alphanumeric characters with underscores and lowercases.
 func sanitizeMetricName(name string) string {
-	// Replace non-alphanumeric characters with underscores
 	var result strings.Builder
 	for _, r := range name {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
@@ -251,8 +313,8 @@ func sanitizeMetricName(name string) string {
 	return strings.ToLower(result.String())
 }
 
+// sanitizeLabelName replaces non-alphanumeric characters with underscores, preserving case.
 func sanitizeLabelName(name string) string {
-	// Similar to metric name but preserve case for labels
 	var result strings.Builder
 	for _, r := range name {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
@@ -262,4 +324,60 @@ func sanitizeLabelName(name string) string {
 		}
 	}
 	return result.String()
+}
+
+// --- Helper functions ---
+
+// sortedKeys returns the keys of m in sorted order for deterministic output.
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// isList checks if v is a JSON array ([]any).
+func isList(v any) bool {
+	_, ok := v.([]any)
+	return ok
+}
+
+// isDict checks if v is a JSON object (map[string]any).
+func isDict(v any) bool {
+	_, ok := v.(map[string]any)
+	return ok
+}
+
+// cloneLabels returns a copy of the labels slice.
+func cloneLabels(labels []Label) []Label {
+	if labels == nil {
+		return nil
+	}
+	c := make([]Label, len(labels))
+	copy(c, labels)
+	return c
+}
+
+// appendLabel appends a new label and returns the extended slice.
+func appendLabel(labels []Label, name, value string) []Label {
+	return append(labels, Label{Name: name, Value: value})
+}
+
+// clonePrefix returns a copy of the string slice used as a metric name prefix.
+func clonePrefix(prefix []string) []string {
+	c := make([]string, len(prefix))
+	copy(c, prefix)
+	return c
+}
+
+// buildMetricName joins prefix parts and an optional suffix with underscores
+// and sanitises the result.
+func buildMetricName(prefix []string, suffix string) string {
+	parts := clonePrefix(prefix)
+	if suffix != "" {
+		parts = append(parts, suffix)
+	}
+	return sanitizeMetricName(strings.Join(parts, "_"))
 }

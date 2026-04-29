@@ -1,59 +1,62 @@
 # OpenSearch Query Exporter
 
-A Prometheus exporter for OpenSearch queries, written in Go. Teams can define custom queries via YAML configuration and expose results as Prometheus metrics.
+A Prometheus exporter that runs custom OpenSearch queries on a schedule and exposes results as metrics. Designed for Kubernetes deployments where teams define their own queries via ConfigMaps.
 
-## Key Features
+## Features
 
-- **Team-Oriented**: Independent query ConfigMaps per team
+- **Query-focused**: Only exposes metrics you define, no noise from cluster internals
 - **Secure**: TLS-only with credential failover support
-- **Efficient**: Concurrent query execution with minimal resource usage
-- **Resilient**: Configurable error handling strategies (preserve/drop/zero)
-- **Comprehensive**: Automatic metric extraction from hits, aggregations, and cluster health
+- **Efficient**: Concurrent background query execution, minimal footprint
+- **Resilient**: Configurable error handling (preserve/drop/zero) per query
+- **Safe**: `max_query_range` rejects queries that would hit warm/cold storage
+- **Kubernetes-native**: Health probes, env var expansion in config, ConfigMap-friendly
 
-## Quick Start
-
-```bash
-# Using Docker
-git clone https://github.com/SAP-cloud-infrastructure/opensearch-query-exporter.git
-cd opensearch-query-exporter
-docker-compose up -d
-
-# View metrics at http://localhost:9206/metrics
-```
-
-### Building from Source
+## Building
 
 ```bash
-# Build the binary
 make build
-
-# Run with example config
-./opensearch-query-exporter -config configs/example-config.yaml
-
-# Run with separate queries directory (recommended for multi-team setup)
-./opensearch-query-exporter -config configs/global.yaml -queries-dir configs/queries/
+make test
 ```
 
 ## Configuration
 
-### Single File Configuration
+Environment variables are expanded in config files (`$VAR` or `${VAR}`).
 
-For simple setups, use a single YAML file with all settings:
+### Global Config
 
 ```yaml
 opensearch_url: https://opensearch.example.com:9200
+ca_cert_path: /certs/ca.crt
+insecure: true
 credentials:
-  - username: "primary_user"
-    password: "primary_password"
-ca_cert_path: /etc/ssl/certs/opensearch-ca.pem
+  - username: "$LOGS_USERNAME"
+    password: "$LOGS_PASSWORD"
+  - username: "$LOGS2_USERNAME"
+    password: "$LOGS2_PASSWORD"
+timeout: 30s
+max_query_range: 168h
 
+# Optional - cluster stats collectors (all disabled by default)
+collect_cluster_health: false
+collect_nodes_stats: false
+collect_indices_stats: false
+
+queries: []
+```
+
+### Query Files
+
+Queries can be in the global config or in separate files loaded via `-queries-dir`:
+
+```yaml
 queries:
   - name: error_count
-    team: sre
-    interval: 60s
+    support_group: observability
+    service: logs
+    interval: 300s
     indices: "logs-*"
-    on_error: preserve   # keep last value on error
-    on_missing: drop     # remove metrics for missing data
+    on_error: preserve
+    on_missing: drop
     query:
       size: 0
       query:
@@ -63,61 +66,36 @@ queries:
             - range: { "@timestamp": { gte: "now-5m" } }
 ```
 
-### Multi-Team Configuration (Recommended)
-
-For production environments with multiple teams, use separate configuration files:
+### Multi-Team Layout
 
 ```
 /config/
-├── global.yaml          # Connection settings (platform team manages)
-└── queries/             # Team query files (each team manages their own)
+├── config.yaml          # Connection settings
+└── queries/             # Per-team query files
     ├── sre.yaml
     ├── security.yaml
     └── platform.yaml
 ```
 
-**Kubernetes Deployment:**
-
-```yaml
-# Platform team deploys global config
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: opensearch-exporter-config
-data:
-  global.yaml: |
-    opensearch_url: https://opensearch.example.com:9200
-    credentials:
-      - username: "${OS_USERNAME}"
-        password: "${OS_PASSWORD}"
-    ca_cert_path: /etc/ssl/certs/ca.pem
-    queries: []
-
----
-# Each team deploys their own queries ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: opensearch-queries-sre
-data:
-  sre.yaml: |
-    queries:
-      - name: error_logs
-        team: sre
-        interval: 30s
-        indices: "logs-*"
-        on_error: preserve
-        query:
-          size: 0
-          query:
-            bool:
-              must:
-                - match: { level: "ERROR" }
+```bash
+opensearch-query-exporter -config /config/config.yaml -queries-dir /config/queries/
 ```
 
-## Error Handling Strategies
+## Query Fields
 
-Each query supports two error handling settings:
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | yes | — | Query identifier, used in metric names |
+| `support_group` | yes | — | Team owning this query (label on metrics) |
+| `service` | yes | — | Service this query monitors (label on metrics) |
+| `interval` | no | 300s | How often to run the query |
+| `indices` | no | `_all` | OpenSearch indices to query |
+| `query` | yes | — | OpenSearch query body |
+| `on_error` | no | `drop` | What to do when query fails |
+| `on_missing` | no | `drop` | What to do when a metric disappears |
+| `metrics` | no | — | Custom metric extraction from response |
+
+## Error Handling Strategies
 
 | Strategy | `on_error` (query fails) | `on_missing` (metric disappears) |
 |----------|--------------------------|----------------------------------|
@@ -125,108 +103,82 @@ Each query supports two error handling settings:
 | `drop` | Remove all metrics (default) | Remove missing metrics (default) |
 | `zero` | Reset values to 0 | Set missing to 0 |
 
-**Example:**
-```yaml
-queries:
-  - name: critical_alerts
-    team: sre
-    on_error: preserve    # Don't lose alerting metrics during outages
-    on_missing: zero      # Show explicit 0 when services stop reporting
-    # ...
-```
+## Max Query Range
+
+Setting `max_query_range: 168h` (7 days) rejects any query with a time range exceeding that limit at startup. This prevents queries from accidentally hitting warm/cold storage tiers.
 
 ## Command-Line Options
 
-```bash
-opensearch-query-exporter [OPTIONS]
-
-Options:
-  -config string           Configuration file path (default "config.yaml")
-  -queries-dir string      Directory containing additional query files (*.yaml)
-  -listen-address string   Metrics server address (default ":9206")
-  -opensearch-url string   OpenSearch URL (default "https://localhost:9200")
-  -insecure               Skip TLS verification
-  -timeout duration        Query timeout (default 30s)
-  -log-level string        Log level: debug, info, warn, error (default "info")
 ```
+-config string           Configuration file path (default "config.yaml")
+-queries-dir string      Directory containing additional query files (*.yaml)
+-listen-address string   Metrics server address (default ":9206")
+-opensearch-url string   OpenSearch URL override
+-insecure               Skip TLS verification
+-timeout duration        Query timeout override
+-log-level string        Log level: debug, info, warn, error (default "info")
+```
+
+## Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/metrics` | Prometheus metrics |
+| `/healthz` | Liveness probe (always 200) |
+| `/readyz` | Readiness probe (pings OpenSearch) |
 
 ## Generated Metrics
 
-### Automatic Metrics (per query)
-
-- `opensearch_query_{name}_hits_total` - Total hits from query
-- `opensearch_query_{name}_took_milliseconds` - Query execution time
-- `opensearch_query_success{query="...", team="..."}` - Query success (1) or failure (0)
-- `opensearch_query_duration_seconds{query="...", team="..."}` - End-to-end duration
-
-### Cluster Metrics
+### Always present
 
 - `opensearch_up` - Cluster reachability (1=up, 0=down)
-- `opensearch_cluster_health_status{cluster="..."}` - Health status (0=green, 1=yellow, 2=red)
-- `opensearch_cluster_health_nodes_total{cluster="..."}` - Node count
-- `opensearch_cluster_health_shards_total{cluster="...", type="..."}` - Shard counts
 
-### Aggregation Metrics
+### Per query
 
-Automatically extracted from OpenSearch aggregation results with appropriate labels.
+- `opensearch_query_{name}_hits` - Total hits from query
+- `opensearch_query_{name}_took_milliseconds` - OpenSearch execution time
+- `opensearch_query_success{query, support_group, service}` - 1 if last run succeeded
+- `opensearch_query_duration_seconds{query, support_group, service}` - End-to-end duration
 
-## Advanced Configuration
+### Aggregation metrics
+
+Automatically extracted from nested aggregations with bucket keys as labels:
+
+```
+opensearch_query_{name}_{agg}_{sub_agg}_doc_count{bucket_key="value"} 42
+```
+
+### Optional (disabled by default)
+
+Enable via config:
+- `collect_cluster_health: true` - cluster status, shard counts, node counts
+- `collect_nodes_stats: true` - per-node JVM, transport, thread pools
+- `collect_indices_stats: true` - aggregate index statistics
 
 ### Custom Metric Extraction
 
 ```yaml
 queries:
   - name: custom_metrics
-    team: platform
-    query:
-      # Your OpenSearch query with aggregations
+    support_group: observability
+    service: api
+    query: { ... }
     metrics:
       - name: response_time_p99
         path: aggregations.response_time.values.99.0
         help: "99th percentile response time"
         labels:
-          service: "api"
+          environment: "prod"
         label_paths:
           region: aggregations.by_region.key
 ```
 
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
-.
-├── cmd/exporter/          # Main application
-├── pkg/
-│   ├── config/           # Configuration handling
-│   ├── opensearch/       # OpenSearch client
-│   ├── metrics/          # Prometheus metrics collection
-│   └── parser/           # Response parsing
-├── configs/
-│   ├── global.yaml       # Example global config
-│   ├── example-config.yaml
-│   └── queries/          # Example team query files
-│       ├── sre.yaml
-│       ├── security.yaml
-│       └── platform.yaml
-└── Dockerfile
-```
-
-### Running Tests
-
-```bash
-make test
-```
-
-### Building
-
-```bash
-# Build for current platform
-make build
-
-# Build for multiple platforms
-make build-all
-
-# Build Docker image
-make docker-build
+cmd/exporter/       Main application
+pkg/config/         Configuration loading, validation, env expansion
+pkg/opensearch/     HTTP client with TLS and credential failover
+pkg/metrics/        Prometheus collector with background query execution
+pkg/parser/         Response parsing (queries, aggregations, cluster stats)
 ```

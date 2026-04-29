@@ -71,7 +71,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // Search executes a search query
-func (c *Client) Search(ctx context.Context, indices string, query map[string]interface{}) (map[string]interface{}, error) {
+func (c *Client) Search(ctx context.Context, indices string, query map[string]any) (map[string]any, error) {
 	path := fmt.Sprintf("/%s/_search", indices)
 
 	body, err := json.Marshal(query)
@@ -94,7 +94,7 @@ func (c *Client) Search(ctx context.Context, indices string, query map[string]in
 		return nil, fmt.Errorf("search returned status %d: %s", resp.StatusCode, string(responseBody))
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(responseBody, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -103,7 +103,7 @@ func (c *Client) Search(ctx context.Context, indices string, query map[string]in
 }
 
 // ClusterHealth returns cluster health information
-func (c *Client) ClusterHealth(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) ClusterHealth(ctx context.Context) (map[string]any, error) {
 	resp, err := c.executeWithFailover(ctx, "GET", "/_cluster/health", nil)
 	if err != nil {
 		return nil, fmt.Errorf("cluster health request failed: %w", err)
@@ -115,7 +115,7 @@ func (c *Client) ClusterHealth(ctx context.Context) (map[string]interface{}, err
 		return nil, fmt.Errorf("cluster health returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse cluster health: %w", err)
 	}
@@ -124,7 +124,7 @@ func (c *Client) ClusterHealth(ctx context.Context) (map[string]interface{}, err
 }
 
 // NodesStats returns nodes statistics
-func (c *Client) NodesStats(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) NodesStats(ctx context.Context) (map[string]any, error) {
 	resp, err := c.executeWithFailover(ctx, "GET", "/_nodes/stats", nil)
 	if err != nil {
 		return nil, fmt.Errorf("nodes stats request failed: %w", err)
@@ -136,7 +136,7 @@ func (c *Client) NodesStats(ctx context.Context) (map[string]interface{}, error)
 		return nil, fmt.Errorf("nodes stats returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse nodes stats: %w", err)
 	}
@@ -145,7 +145,7 @@ func (c *Client) NodesStats(ctx context.Context) (map[string]interface{}, error)
 }
 
 // IndicesStats returns indices statistics
-func (c *Client) IndicesStats(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) IndicesStats(ctx context.Context) (map[string]any, error) {
 	resp, err := c.executeWithFailover(ctx, "GET", "/_stats", nil)
 	if err != nil {
 		return nil, fmt.Errorf("indices stats request failed: %w", err)
@@ -157,7 +157,7 @@ func (c *Client) IndicesStats(ctx context.Context) (map[string]interface{}, erro
 		return nil, fmt.Errorf("indices stats returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse indices stats: %w", err)
 	}
