@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+# SPDX-License-Identifier: Apache-2.0
+
+ignored:
+  # DL3018: Pin versions in apk add. We rely on --no-cache to pick up the
+  # latest patched Alpine package each build, which is the right default
+  # for ca-certificates, git, and similar low-risk tooling. Pinning Alpine
+  # apk versions causes the build to break whenever upstream rotates them.
+  - DL3018
