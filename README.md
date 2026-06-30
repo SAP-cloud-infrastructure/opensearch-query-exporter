@@ -1,6 +1,15 @@
 # OpenSearch Query Exporter
 
+[![REUSE status](https://api.reuse.software/badge/github.com/SAP-cloud-infrastructure/opensearch-query-exporter)](https://api.reuse.software/info/github.com/SAP-cloud-infrastructure/opensearch-query-exporter)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSES/Apache-2.0.txt)
+
 A Prometheus exporter that runs custom OpenSearch queries on a schedule and exposes results as metrics. Designed for Kubernetes deployments where teams define their own queries via ConfigMaps.
+
+## Requirements
+
+- Go 1.26+ for building from source
+- An OpenSearch cluster reachable over HTTPS (TLS only)
+- Credentials with read access to the indices you want to query
 
 ## Features
 
@@ -182,3 +191,19 @@ pkg/opensearch/     HTTP client with TLS and credential failover
 pkg/metrics/        Prometheus collector with background query execution
 pkg/parser/         Response parsing (queries, aggregations, cluster stats)
 ```
+
+## Support, Feedback, Contributing
+
+This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/SAP-cloud-infrastructure/opensearch-query-exporter/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, see our [Contribution Guidelines](CONTRIBUTING.md).
+
+## Security / Disclosure
+
+If you find any bug that may be a security problem, please follow our instructions in the [security policy](SECURITY.md) on how to report it. Please do not create GitHub issues for security-related doubts or problems.
+
+## Code of Conduct
+
+We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone. By participating in this project, you agree to abide by its [Code of Conduct](CODE_OF_CONDUCT.md) at all times.
+
+## Licensing
+
+Copyright 2026 SAP SE or an SAP affiliate company and opensearch-query-exporter contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/SAP-cloud-infrastructure/opensearch-query-exporter).
