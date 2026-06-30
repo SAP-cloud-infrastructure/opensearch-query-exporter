@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
+
 // Package config loads and validates the exporter's YAML configuration.
 package config
 

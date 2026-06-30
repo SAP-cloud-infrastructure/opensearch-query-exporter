@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
+
 // Command exporter runs the OpenSearch query exporter daemon, which executes
 // configured queries on an interval and serves their results as Prometheus metrics.
 package main

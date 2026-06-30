@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
+
 // Package metrics implements the Prometheus collector that runs queries
 // against OpenSearch in the background and exposes their results.
 package metrics
