@@ -7,32 +7,37 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   schedule:
     - cron: "37 6 * * 1"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
   security-events: write
   actions: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze Go
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          check-latest: true
           cache: true
+          cache-dependency-path: go.sum
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: go
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      - name: Build
+        run: go build ./cmd/exporter
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:
