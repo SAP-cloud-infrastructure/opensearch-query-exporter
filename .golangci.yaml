@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+# SPDX-License-Identifier: Apache-2.0
+
+version: "2"
+
+run:
+  modules-download-mode: readonly
+  timeout: 3m
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/SAP-cloud-infrastructure/opensearch-query-exporter
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - perfsprint
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - whitespace
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    gosec:
+      excludes:
+        - G112  # ReadHeaderTimeout — see net/http Keep-Alive race
+        - G306  # file permissions handled via umask
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+          - gosec
+      - text: 'declaration of "err" shadows'
+        linters:
+          - govet
+
+output:
+  formats:
+    text:
+      print-issued-lines: false
