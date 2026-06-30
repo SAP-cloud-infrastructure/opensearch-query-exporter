@@ -1,3 +1,4 @@
+// Package parser converts OpenSearch JSON responses into raw Prometheus metrics.
 package parser
 
 import (

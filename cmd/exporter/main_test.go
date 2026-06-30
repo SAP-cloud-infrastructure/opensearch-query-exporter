@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"testing"
@@ -15,7 +16,8 @@ func TestHelpFlagRuns(t *testing.T) {
 		// Some Go versions may exit 0 for -h; treat both as success
 		return
 	}
-	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() >= 0 {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() >= 0 {
 		// Non-negative exit code indicates the process ran; acceptable
 		return
 	}
@@ -23,7 +25,7 @@ func TestHelpFlagRuns(t *testing.T) {
 }
 
 // TestHelperProcess is executed in the subprocess to call main with provided args.
-func TestHelperProcess(t *testing.T) {
+func TestHelperProcess(_ *testing.T) {
 	if os.Getenv("RUN_MAIN_HELP") != "1" {
 		return
 	}

@@ -1,3 +1,5 @@
+// Package opensearch implements a minimal HTTPS client for OpenSearch with
+// basic-auth credential failover and TLS configuration.
 package opensearch
 
 import (
@@ -6,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,7 +63,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to ping OpenSearch: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -83,7 +86,7 @@ func (c *Client) Search(ctx context.Context, indices string, query map[string]an
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -108,7 +111,7 @@ func (c *Client) ClusterHealth(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cluster health request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -129,7 +132,7 @@ func (c *Client) NodesStats(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nodes stats request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -150,7 +153,7 @@ func (c *Client) IndicesStats(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("indices stats request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -208,7 +211,7 @@ func (c *Client) executeWithFailover(ctx context.Context, method, path string, b
 
 		// Check if authentication succeeded
 		if resp.StatusCode == http.StatusUnauthorized {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("credential %d: authentication failed", i+1)
 			continue
 		}
@@ -221,5 +224,5 @@ func (c *Client) executeWithFailover(ctx context.Context, method, path string, b
 	if lastErr != nil {
 		return nil, fmt.Errorf("all credentials failed: %w", lastErr)
 	}
-	return nil, fmt.Errorf("no credentials configured")
+	return nil, errors.New("no credentials configured")
 }

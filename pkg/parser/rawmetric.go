@@ -98,11 +98,11 @@ func entryKey(labelValues []string) string {
 // precedence. For entries present in old but absent from new:
 //   - if zeroMissing is true, the entry is included with value 0
 //   - if zeroMissing is false, the old entry is preserved as-is
-func MergeMetricGroups(old, new map[string]*MetricGroup, zeroMissing bool) map[string]*MetricGroup {
+func MergeMetricGroups(prev, current map[string]*MetricGroup, zeroMissing bool) map[string]*MetricGroup {
 	result := make(map[string]*MetricGroup)
 
 	// Copy all new groups into the result first.
-	for name, newGroup := range new {
+	for name, newGroup := range current {
 		result[name] = &MetricGroup{
 			Help:      newGroup.Help,
 			LabelKeys: slices.Clone(newGroup.LabelKeys),
@@ -111,8 +111,8 @@ func MergeMetricGroups(old, new map[string]*MetricGroup, zeroMissing bool) map[s
 	}
 
 	// Process old groups to handle entries missing from new.
-	for name, oldGroup := range old {
-		newGroup, existsInNew := new[name]
+	for name, oldGroup := range prev {
+		newGroup, existsInNew := current[name]
 		if !existsInNew {
 			// Entire group is absent from new: preserve or zero all entries.
 			merged := &MetricGroup{

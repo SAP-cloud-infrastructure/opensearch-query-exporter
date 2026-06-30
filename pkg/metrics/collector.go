@@ -1,3 +1,5 @@
+// Package metrics implements the Prometheus collector that runs queries
+// against OpenSearch in the background and exposes their results.
 package metrics
 
 import (

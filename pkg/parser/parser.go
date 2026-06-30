@@ -183,7 +183,7 @@ func parseAgg(aggKey string, agg map[string]any, metricPrefix []string, labels [
 			name := strings.Join(append(clonePrefix(metricPrefix), sanitizeMetricName(key)), "_")
 			metrics = append(metrics, RawMetric{
 				Name:   name,
-				Help:   fmt.Sprintf("Aggregation field %s", key),
+				Help:   "Aggregation field " + key,
 				Labels: cloneLabels(labels),
 				Value:  v,
 			})

@@ -19,9 +19,10 @@ import (
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 )
 
-// generateSelfSignedCert returns PEM-encoded cert and key bytes.
-func generateSelfSignedCert(t *testing.T, host string) ([]byte, []byte) {
+// generateSelfSignedCert returns PEM-encoded cert and key bytes for 127.0.0.1.
+func generateSelfSignedCert(t *testing.T) ([]byte, []byte) {
 	t.Helper()
+	const host = "127.0.0.1"
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +53,7 @@ func generateSelfSignedCert(t *testing.T, host string) ([]byte, []byte) {
 
 func TestClient_TLS_WithCACertAndFailover(t *testing.T) {
 	// Start HTTPS server with self-signed cert
-	certPEM, keyPEM := generateSelfSignedCert(t, "127.0.0.1")
+	certPEM, keyPEM := generateSelfSignedCert(t)
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		t.Fatal(err)
@@ -109,13 +110,13 @@ func TestClient_TLS_WithCACertAndFailover(t *testing.T) {
 
 func TestClient_TLS_InsecureSkipsVerify(t *testing.T) {
 	// HTTPS server with self-signed cert, no CA provided, but insecure enabled
-	certPEM, keyPEM := generateSelfSignedCert(t, "127.0.0.1")
+	certPEM, keyPEM := generateSelfSignedCert(t)
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	}))
@@ -145,7 +146,7 @@ func TestClient_TLS_InsecureSkipsVerify(t *testing.T) {
 
 func TestClient_Search_And_Health_Endpoints(t *testing.T) {
 	// HTTPS server requiring auth and serving JSON endpoints
-	certPEM, keyPEM := generateSelfSignedCert(t, "127.0.0.1")
+	certPEM, keyPEM := generateSelfSignedCert(t)
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +236,7 @@ func TestClient_Search_And_Health_Endpoints(t *testing.T) {
 
 func TestClient_Search_FailoverOnUnauthorized(t *testing.T) {
 	// First credential unauthorized, second authorized
-	certPEM, keyPEM := generateSelfSignedCert(t, "127.0.0.1")
+	certPEM, keyPEM := generateSelfSignedCert(t)
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +252,7 @@ func TestClient_Search_FailoverOnUnauthorized(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"took":1,"hits":{"total":{"value":0}}}`))
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	srv := httptest.NewUnstartedServer(mux)
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
