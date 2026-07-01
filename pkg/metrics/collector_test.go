@@ -174,7 +174,7 @@ func TestCollector_UpAndQueryMetrics(t *testing.T) {
 
 func TestCollector_PingFailureSetsUpZero(t *testing.T) {
 	// Server that always 401s
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()

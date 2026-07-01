@@ -95,7 +95,7 @@ func parseNodesStatsBlock(block map[string]any, prefix []string, labels []Label)
 			}
 			metrics = append(metrics, RawMetric{
 				Name:   buildMetricName(prefix, key),
-				Help:   fmt.Sprintf("nodes stats: %s", strings.Join(nextPrefix, ".")),
+				Help:   "nodes stats: " + strings.Join(nextPrefix, "."),
 				Labels: cloneLabels(labels),
 				Value:  f,
 			})
@@ -138,7 +138,7 @@ func parseNodesStatsBlock(block map[string]any, prefix []string, labels []Label)
 			if f, ok := toFloat64(value); ok {
 				metrics = append(metrics, RawMetric{
 					Name:   buildMetricName(prefix, key),
-					Help:   fmt.Sprintf("nodes stats: %s", strings.Join(nextPrefix, ".")),
+					Help:   "nodes stats: " + strings.Join(nextPrefix, "."),
 					Labels: cloneLabels(labels),
 					Value:  f,
 				})

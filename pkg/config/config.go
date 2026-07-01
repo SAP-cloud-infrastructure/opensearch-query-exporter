@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
+// Package config loads and validates the exporter's YAML configuration.
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,7 +79,7 @@ type QueriesFile struct {
 
 // LoadConfig loads configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // config path is supplied by operator
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -100,12 +102,12 @@ func LoadConfig(path string) (*Config, error) {
 
 	// Enforce HTTPS only
 	if !strings.HasPrefix(strings.ToLower(config.OpenSearchURL), "https://") {
-		return nil, fmt.Errorf("opensearch_url must use https scheme")
+		return nil, errors.New("opensearch_url must use https scheme")
 	}
 
 	// Validate credentials
 	if len(config.Credentials) == 0 {
-		return nil, fmt.Errorf("at least one credential pair must be provided")
+		return nil, errors.New("at least one credential pair must be provided")
 	}
 
 	// Validate each credential
@@ -160,7 +162,7 @@ func LoadQueriesDir(config *Config, dir string) error {
 
 // loadQueriesFile loads queries from a single YAML file
 func loadQueriesFile(path string, maxRange time.Duration) ([]Query, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is constrained to operator-supplied queries dir
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}

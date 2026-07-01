@@ -4,7 +4,6 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -80,7 +79,7 @@ func parseIndicesStatsBlock(block map[string]any, prefix []string, labels []Labe
 			}
 			metrics = append(metrics, RawMetric{
 				Name:   buildMetricName(prefix, key),
-				Help:   fmt.Sprintf("indices stats: %s", strings.Join(nextPrefix, ".")),
+				Help:   "indices stats: " + strings.Join(nextPrefix, "."),
 				Labels: cloneLabels(labels),
 				Value:  f,
 			})
@@ -112,7 +111,7 @@ func parseIndicesStatsBlock(block map[string]any, prefix []string, labels []Labe
 			if f, ok := toFloat64(value); ok {
 				metrics = append(metrics, RawMetric{
 					Name:   buildMetricName(prefix, key),
-					Help:   fmt.Sprintf("indices stats: %s", strings.Join(nextPrefix, ".")),
+					Help:   "indices stats: " + strings.Join(nextPrefix, "."),
 					Labels: cloneLabels(labels),
 					Value:  f,
 				})

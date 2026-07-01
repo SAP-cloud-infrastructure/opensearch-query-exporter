@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
+// Package parser converts OpenSearch JSON responses into raw Prometheus metrics.
 package parser
 
 import (

@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
+// Command exporter runs the OpenSearch query exporter daemon, which executes
+// configured queries on an interval and serves their results as Prometheus metrics.
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -13,11 +16,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/config"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/metrics"
 	"github.com/SAP-cloud-infrastructure/opensearch-query-exporter/pkg/opensearch"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -83,11 +87,11 @@ func main() {
 	}
 
 	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := client.Ping(ctx); err != nil {
-		slog.Error("Failed to connect to OpenSearch", "error", err)
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	pingErr := client.Ping(pingCtx)
+	pingCancel()
+	if pingErr != nil {
+		slog.Error("Failed to connect to OpenSearch", "error", pingErr)
 		os.Exit(1)
 	}
 
@@ -101,9 +105,9 @@ func main() {
 	// Set up HTTP server
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -113,10 +117,10 @@ func main() {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<html>
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html>
 <head><title>OpenSearch Exporter</title></head>
 <body>
 <h1>OpenSearch Exporter</h1>
@@ -138,7 +142,7 @@ func main() {
 
 	go func() {
 		slog.Info("Starting server", "address", *listenAddress)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Failed to start server", "error", err)
 			os.Exit(1)
 		}
