@@ -20,3 +20,6 @@ fmt:
 
 clean:
 	rm -f $(BINARY_NAME) coverage.out coverage.html
+
+validate-queries:
+	go run ./cmd/exporter -config configs/example-config.yaml -queries-dir configs/queries -validate-config

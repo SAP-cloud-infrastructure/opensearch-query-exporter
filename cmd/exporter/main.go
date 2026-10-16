@@ -25,13 +25,14 @@ import (
 )
 
 var (
-	listenAddress = flag.String("listen-address", ":9206", "Address to listen on for metrics")
-	configPath    = flag.String("config", "config.yaml", "Path to configuration file")
-	queriesDir    = flag.String("queries-dir", "", "Directory containing additional query files (*.yaml)")
-	opensearchURL = flag.String("opensearch-url", "https://localhost:9200", "OpenSearch URL (must be https)")
-	insecure      = flag.Bool("insecure", false, "Skip TLS certificate verification (insecure)")
-	timeout       = flag.Duration("timeout", 30*time.Second, "Query timeout")
-	logLevel      = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	listenAddress  = flag.String("listen-address", ":9206", "Address to listen on for metrics")
+	configPath     = flag.String("config", "config.yaml", "Path to configuration file")
+	queriesDir     = flag.String("queries-dir", "", "Directory containing additional query files (*.yaml)")
+	opensearchURL  = flag.String("opensearch-url", "https://localhost:9200", "OpenSearch URL (must be https)")
+	insecure       = flag.Bool("insecure", false, "Skip TLS certificate verification (insecure)")
+	timeout        = flag.Duration("timeout", 30*time.Second, "Query timeout")
+	logLevel       = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	validateConfig = flag.Bool("validate-config", false, "Only loads configuration file and queries dir to validate their correctness")
 )
 
 func main() {
@@ -66,6 +67,11 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("Loaded queries from directory", "dir", *queriesDir, "total_queries", len(cfg.Queries))
+	}
+
+	if *validateConfig {
+		slog.Info("Configuration file and all queries are valid.")
+		os.Exit(0)
 	}
 
 	// Override config with command line flags if provided

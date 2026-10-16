@@ -4,7 +4,8 @@
 queries:
   # Error log monitoring - critical for alerting
   - name: error_logs
-    team: sre
+    support_group: sre
+    service: sre
     description: Count error logs in the last 5 minutes
     interval: 30s
     indices: "logs-*"
@@ -23,7 +24,8 @@ queries:
 
   # Errors grouped by service
   - name: errors_by_service
-    team: sre
+    support_group: sre
+    service: sre
     description: Count errors grouped by service
     interval: 60s
     indices: "logs-*"
@@ -51,7 +53,8 @@ queries:
 
   # Pod restart tracking
   - name: pod_restarts
-    team: sre
+    support_group: sre
+    service: sre
     description: Track Kubernetes pod restarts
     interval: 120s
     indices: "kubernetes-events-*"
