@@ -18,11 +18,14 @@ credentials:
 ca_cert_path: /etc/ssl/certs/opensearch-ca.pem
 insecure: false
 timeout: 30s
+max_query_range: 168h
 
 # Query definitions with error handling strategies
 queries:
   # Simple document count
   - name: all_documents
+    support_group: test
+    service: test
     team: platform
     description: Count all documents in the cluster
     interval: 60s
@@ -36,7 +39,8 @@ queries:
 
   # Error monitoring with preserve strategy
   - name: error_logs
-    team: sre
+    support_group: sre
+    service: sre
     description: Count error logs in the last 5 minutes
     interval: 30s
     indices: "logs-*"
@@ -55,7 +59,8 @@ queries:
 
   # Aggregation query with buckets
   - name: errors_by_service
-    team: sre
+    support_group: sre
+    service: sre
     description: Count errors grouped by service
     interval: 60s
     indices: "logs-*"
@@ -83,7 +88,8 @@ queries:
 
   # Performance metrics with custom metric extraction
   - name: response_time_stats
-    team: performance
+    support_group: performance
+    service: performance
     description: API response time statistics
     interval: 120s
     indices: "api-metrics-*"
