@@ -1,0 +1,16 @@
+# Add your queries below, then validate their syntax by running: make validate-queries
+#
+# Example:
+#   queries:
+#     - name: my-query
+#       support_group: my-group
+#       service: my-service
+#       interval: 180s
+#       indices: "my-index-*"
+#       on_missing: drop
+#       query:
+#         size: 0
+#         query:
+#           match_all: {}
+
+queries: []

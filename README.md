@@ -75,6 +75,13 @@ queries:
             - range: { "@timestamp": { gte: "now-5m" } }
 ```
 
+## Static validation of queries
+
+In order to validate your queries, update [example file](https://github.com/SAP-cloud-infrastructure/opensearch-query-exporter/tree/main/configs/queries/your-test-queries.yaml) or create new *.yaml file in [queries dir](https://github.com/SAP-cloud-infrastructure/opensearch-query-exporter/tree/main/configs/queries). After you prepare your quries run:
+```bash
+make validate-queries
+```
+
 ### Multi-Team Layout
 
 ```

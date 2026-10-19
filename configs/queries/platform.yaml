@@ -4,7 +4,8 @@
 queries:
   # Overall cluster document count
   - name: total_documents
-    team: platform
+    support_group: platform
+    service: platform
     description: Total documents across all indices
     interval: 300s
     indices: "_all"
@@ -17,7 +18,8 @@ queries:
 
   # Index size monitoring
   - name: index_sizes
-    team: platform
+    support_group: platform
+    service: platform
     description: Document count per index pattern
     interval: 300s
     indices: "logs-*,metrics-*,events-*"
@@ -35,7 +37,8 @@ queries:
 
   # Ingestion rate
   - name: ingestion_rate
-    team: platform
+    support_group: platform
+    service: platform
     description: Documents ingested in the last minute
     interval: 60s
     indices: "_all"
