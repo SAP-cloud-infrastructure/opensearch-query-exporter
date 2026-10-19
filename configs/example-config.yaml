@@ -26,7 +26,6 @@ queries:
   - name: all_documents
     support_group: test
     service: test
-    team: platform
     description: Count all documents in the cluster
     interval: 60s
     indices: "_all"
